@@ -1,0 +1,24 @@
+services:
+  elomai-portfolio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: elomai-portfolio:latest
+    container_name: elomai_portfolio
+    restart: unless-stopped
+    ports:
+      # Expose port from .env file or default to 8080 if not set
+      - "${PORT:-8081}:80"
+    environment:
+      - NODE_ENV=production
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - elomai_network
+
+networks:
+  elomai_network:
+    driver: bridge
