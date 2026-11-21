@@ -1,0 +1,14 @@
+{
+  "name": "portfolio-e2e",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Playwright end-to-end checks for the Elom AI Engineer portfolio",
+  "scripts": {
+    "test": "playwright test",
+    "test:prod": "BASE_URL=https://elomaiapp.com playwright test",
+    "report": "playwright show-report report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1"
+  }
+}

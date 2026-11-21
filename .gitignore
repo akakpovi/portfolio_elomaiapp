@@ -32,3 +32,8 @@ docker-compose.override.yml
 *.tmp
 *.temp
 *.swp
+# Test artifacts
+tests/report/
+tests/test-results/
+tests/node_modules/
+playwright-report/

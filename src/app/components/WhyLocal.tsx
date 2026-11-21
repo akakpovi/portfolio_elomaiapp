@@ -5,7 +5,7 @@ export function WhyLocal() {
   const { lang } = useLang();
 
   return (
-    <section id="about" className="py-24 relative overflow-hidden">
+    <section id="why-local" className="py-24 relative overflow-hidden">
       <div
         className="absolute inset-0"
         style={{
@@ -147,7 +147,7 @@ export function WhyLocal() {
               boxShadow: '0 0 30px rgba(6, 182, 212, 0.25)',
             }}
           >
-            {tx(i18n.contact.cta, lang)}
+            {tx(i18n.hero.cta3, lang)}
           </button>
         </div>
       </div>

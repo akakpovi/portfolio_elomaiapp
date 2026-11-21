@@ -1,53 +1,106 @@
-import { ExternalLink, Github, ArrowRight } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ExternalLink, Github, ArrowRight, X, ArrowUpRight, Layers } from 'lucide-react';
 import { useLang, i18n, tx } from './i18n';
+import { PROJECTS, type Project, type ProjectStatus } from '../data/projects';
 
-const PROJECT_KEYS = ['p1', 'p2', 'p3', 'p4', 'p5'] as const;
-const PROJECT_COLORS = ['#06b6d4', '#8b5cf6', '#ef4444', '#10b981', '#f59e0b'];
-const PROJECT_EMOJIS = ['🤖', '🏢', '🔒', '🧹', '💈'];
-
-const STATUS_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  'Production': { bg: 'rgba(16, 185, 129, 0.1)', text: '#10b981', border: 'rgba(16, 185, 129, 0.3)' },
-  'En production': { bg: 'rgba(16, 185, 129, 0.1)', text: '#10b981', border: 'rgba(16, 185, 129, 0.3)' },
-  'Produktiv': { bg: 'rgba(16, 185, 129, 0.1)', text: '#10b981', border: 'rgba(16, 185, 129, 0.3)' },
-  'Beta': { bg: 'rgba(245, 158, 11, 0.1)', text: '#f59e0b', border: 'rgba(245, 158, 11, 0.3)' },
-  'Stable': { bg: 'rgba(6, 182, 212, 0.1)', text: '#06b6d4', border: 'rgba(6, 182, 212, 0.3)' },
-  'Stabil': { bg: 'rgba(6, 182, 212, 0.1)', text: '#06b6d4', border: 'rgba(6, 182, 212, 0.3)' },
-  'In Development': { bg: 'rgba(139, 92, 246, 0.1)', text: '#8b5cf6', border: 'rgba(139, 92, 246, 0.3)' },
-  'En développement': { bg: 'rgba(139, 92, 246, 0.1)', text: '#8b5cf6', border: 'rgba(139, 92, 246, 0.3)' },
-  'In Entwicklung': { bg: 'rgba(139, 92, 246, 0.1)', text: '#8b5cf6', border: 'rgba(139, 92, 246, 0.3)' },
+const STATUS_STYLE: Record<ProjectStatus, { bg: string; text: string; border: string }> = {
+  live: { bg: 'rgba(16, 185, 129, 0.12)', text: '#6ee7b7', border: 'rgba(16, 185, 129, 0.35)' },
+  development: { bg: 'rgba(139, 92, 246, 0.12)', text: '#c4b5fd', border: 'rgba(139, 92, 246, 0.35)' },
+  prototype: { bg: 'rgba(245, 158, 11, 0.12)', text: '#fcd34d', border: 'rgba(245, 158, 11, 0.32)' },
+  research: { bg: 'rgba(6, 182, 212, 0.12)', text: '#67e8f9', border: 'rgba(6, 182, 212, 0.32)' },
+  academic: { bg: 'rgba(99, 102, 241, 0.12)', text: '#a5b4fc', border: 'rgba(99, 102, 241, 0.32)' },
+  'open-source': { bg: 'rgba(20, 184, 166, 0.12)', text: '#5eead4', border: 'rgba(20, 184, 166, 0.32)' },
 };
+
+function StatusPill({ status }: { status: ProjectStatus }) {
+  const { lang } = useLang();
+  const s = STATUS_STYLE[status];
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10.5px] whitespace-nowrap"
+      style={{
+        background: s.bg,
+        color: s.text,
+        border: `1px solid ${s.border}`,
+        fontFamily: 'JetBrains Mono, monospace',
+      }}
+    >
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: s.text }} />
+      {tx(i18n.projects.statusLabels[status], lang)}
+    </span>
+  );
+}
 
 export function Projects() {
   const { lang } = useLang();
+  const [openSlug, setOpenSlug] = useState<string | null>(null);
+
+  const openProject = useMemo(() => PROJECTS.find(p => p.slug === openSlug) ?? null, [openSlug]);
+
+  const open = useCallback((slug: string) => {
+    setOpenSlug(slug);
+    if (window.location.hash !== `#project-${slug}`) {
+      window.history.replaceState(null, '', `#project-${slug}`);
+    }
+  }, []);
+
+  const close = useCallback(() => {
+    setOpenSlug(null);
+    if (window.location.hash.startsWith('#project-')) {
+      window.history.replaceState(null, '', '#projects');
+    }
+  }, []);
+
+  // Deep link support: /#project-aka-ia
+  useEffect(() => {
+    const fromHash = () => {
+      const m = window.location.hash.match(/^#project-(.+)$/);
+      if (m && PROJECTS.some(p => p.slug === m[1])) {
+        setOpenSlug(m[1]);
+        setTimeout(() => document.getElementById('projects')?.scrollIntoView({ behavior: 'smooth' }), 60);
+      }
+    };
+    fromHash();
+    window.addEventListener('hashchange', fromHash);
+    return () => window.removeEventListener('hashchange', fromHash);
+  }, []);
+
+  useEffect(() => {
+    if (!openSlug) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = '';
+    };
+  }, [openSlug, close]);
 
   return (
     <section id="projects" className="py-24 relative">
       <div
         className="absolute inset-0"
-        style={{
-          background: 'radial-gradient(ellipse 60% 50% at 0% 80%, rgba(139, 92, 246, 0.04) 0%, transparent 70%)',
-        }}
+        style={{ background: 'radial-gradient(ellipse 65% 45% at 100% 60%, rgba(139, 92, 246, 0.06) 0%, transparent 70%)' }}
       />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
-        {/* Header */}
-        <div className="text-center mb-16">
+        <div className="text-center mb-14">
           <div
-            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs mb-6"
+            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[11px] mb-5"
             style={{
               background: 'rgba(6, 182, 212, 0.08)',
-              border: '1px solid rgba(6, 182, 212, 0.25)',
-              color: '#06b6d4',
+              border: '1px solid rgba(6, 182, 212, 0.26)',
+              color: '#67e8f9',
               fontFamily: 'JetBrains Mono, monospace',
             }}
           >
-            PROJECTS
+            PORTFOLIO · {PROJECTS.length} {tx(i18n.projects.counter, lang).toUpperCase()}
           </div>
           <h2
             className="text-3xl sm:text-4xl mb-4"
             style={{
               fontFamily: 'JetBrains Mono, monospace',
               fontWeight: 700,
-              background: 'linear-gradient(135deg, #e2e8f0, #06b6d4)',
+              background: 'linear-gradient(120deg, #f1f5f9, #67e8f9)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
               backgroundClip: 'text',
@@ -55,166 +108,373 @@ export function Projects() {
           >
             {tx(i18n.projects.title, lang)}
           </h2>
-          <p className="text-sm max-w-xl mx-auto" style={{ color: '#94a3b8' }}>
+          <p className="text-sm max-w-2xl mx-auto leading-relaxed" style={{ color: '#94a3b8' }}>
             {tx(i18n.projects.subtitle, lang)}
           </p>
         </div>
 
-        {/* Projects grid */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {PROJECT_KEYS.map((key, idx) => {
-            const project = i18n.projects[key];
-            const color = PROJECT_COLORS[idx];
-            const emoji = PROJECT_EMOJIS[idx];
-            const statusText = tx(project.status, lang);
-            const statusStyle = STATUS_COLORS[statusText] || STATUS_COLORS['Production'];
-
-            return (
-              <div
-                key={key}
-                className="group relative rounded-2xl p-5 flex flex-col gap-4 transition-all duration-300 cursor-pointer"
-                style={{
-                  background: 'rgba(10, 20, 44, 0.6)',
-                  border: '1px solid rgba(6, 182, 212, 0.1)',
-                  backdropFilter: 'blur(20px)',
-                }}
-                onMouseEnter={e => {
-                  (e.currentTarget as HTMLElement).style.border = `1px solid ${color}30`;
-                  (e.currentTarget as HTMLElement).style.boxShadow = `0 8px 40px ${color}10`;
-                  (e.currentTarget as HTMLElement).style.transform = 'translateY(-4px)';
-                }}
-                onMouseLeave={e => {
-                  (e.currentTarget as HTMLElement).style.border = '1px solid rgba(6, 182, 212, 0.1)';
-                  (e.currentTarget as HTMLElement).style.boxShadow = 'none';
-                  (e.currentTarget as HTMLElement).style.transform = 'translateY(0)';
-                }}
+        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-5">
+          {PROJECTS.map(project => (
+            <article
+              key={project.slug}
+              className="group relative rounded-2xl overflow-hidden flex flex-col transition-all duration-300 hover:-translate-y-1"
+              style={{
+                background: 'linear-gradient(170deg, rgba(16, 23, 48, 0.94), rgba(8, 13, 30, 0.9))',
+                border: `1px solid ${project.accent}20`,
+              }}
+            >
+              {/* Cover */}
+              <button
+                onClick={() => open(project.slug)}
+                className="relative w-full text-left"
+                style={{ background: `linear-gradient(140deg, ${project.accent}1f, rgba(8, 13, 30, 0.2) 70%)` }}
+                aria-label={`${tx(i18n.projects.viewProject, lang)}: ${project.name}`}
               >
-                {/* Top accent */}
-                <div
-                  className="absolute top-0 left-0 right-0 h-px rounded-t-2xl"
-                  style={{ background: `linear-gradient(90deg, transparent, ${color}60, transparent)` }}
-                />
-
-                {/* Header */}
-                <div className="flex items-start justify-between">
+                <div className="h-[104px] flex items-center justify-between px-5 relative overflow-hidden">
                   <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
-                    style={{ background: `${color}12`, border: `1px solid ${color}25` }}
-                  >
-                    {emoji}
-                  </div>
-                  <span
-                    className="px-2 py-0.5 rounded-full text-xs"
+                    className="absolute inset-0 opacity-[0.5]"
                     style={{
-                      background: statusStyle.bg,
-                      color: statusStyle.text,
-                      border: `1px solid ${statusStyle.border}`,
-                      fontFamily: 'JetBrains Mono, monospace',
+                      backgroundImage: `radial-gradient(circle at 82% 20%, ${project.accent}33, transparent 55%), repeating-linear-gradient(90deg, ${project.accent}10 0 1px, transparent 1px 26px)`,
                     }}
+                  />
+                  <span
+                    className="relative text-2xl tracking-[0.14em]"
+                    style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: project.accent }}
                   >
-                    {statusText}
+                    {project.monogram}
                   </span>
+                  <StatusPill status={project.status} />
                 </div>
+              </button>
 
-                {/* Title & description */}
-                <div>
-                  <h3
-                    className="text-base mb-2"
-                    style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, color: '#e2e8f0' }}
-                  >
-                    {tx(project.title, lang)}
-                  </h3>
-                  <p className="text-sm leading-relaxed" style={{ color: '#94a3b8' }}>
-                    {tx(project.desc, lang)}
-                  </p>
-                </div>
+              <div className="px-5 pb-5 flex flex-col gap-3 flex-1">
+                <h3
+                  className="text-[14.5px] leading-snug"
+                  style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, color: '#f1f5f9' }}
+                >
+                  {project.name}
+                </h3>
+                <p className="text-[13px] leading-relaxed flex-1" style={{ color: '#94a3b8' }}>
+                  {tx(project.summary, lang)}
+                </p>
 
-                {/* Tags */}
                 <div className="flex flex-wrap gap-1.5">
-                  {project.tags.map(tag => (
+                  {project.stack.slice(0, 4).map(t => (
                     <span
-                      key={tag}
-                      className="px-2 py-0.5 rounded-md text-xs"
+                      key={t}
+                      className="px-1.5 py-0.5 rounded text-[10.5px]"
                       style={{
-                        background: `${color}10`,
-                        border: `1px solid ${color}20`,
-                        color,
+                        background: `${project.accent}0f`,
+                        border: `1px solid ${project.accent}20`,
+                        color: project.accent,
                         fontFamily: 'JetBrains Mono, monospace',
                       }}
                     >
-                      {tag}
+                      {t}
                     </span>
                   ))}
+                  {project.stack.length > 4 && (
+                    <span
+                      className="px-1.5 py-0.5 rounded text-[10.5px]"
+                      style={{ color: '#64748b', fontFamily: 'JetBrains Mono, monospace' }}
+                    >
+                      +{project.stack.length - 4}
+                    </span>
+                  )}
                 </div>
 
-                {/* Footer actions */}
                 <div
-                  className="flex items-center gap-3 pt-3 mt-auto"
-                  style={{ borderTop: '1px solid rgba(6, 182, 212, 0.08)' }}
+                  className="flex items-center gap-3 pt-3 mt-1"
+                  style={{ borderTop: '1px solid rgba(100, 116, 139, 0.16)' }}
                 >
                   <button
-                    className="flex items-center gap-1.5 text-xs transition-colors"
-                    style={{ color: '#64748b' }}
-                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = color}
-                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#64748b'}
+                    onClick={() => open(project.slug)}
+                    className="inline-flex items-center gap-1.5 text-[12px] transition-opacity hover:opacity-80"
+                    style={{ color: project.accent, fontFamily: 'DM Sans, sans-serif', fontWeight: 600 }}
                   >
-                    <Github size={13} />
-                    <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>{tx(i18n.projects.viewCode, lang)}</span>
+                    {tx(i18n.projects.viewProject, lang)}
+                    <ArrowRight size={12} />
                   </button>
-                  <button
-                    className="ml-auto flex items-center gap-1.5 text-xs transition-all"
-                    style={{ color }}
-                    onMouseEnter={e => {
-                      const el = e.currentTarget as HTMLElement;
-                      el.style.gap = '8px';
-                    }}
-                    onMouseLeave={e => {
-                      const el = e.currentTarget as HTMLElement;
-                      el.style.gap = '6px';
-                    }}
-                  >
-                    <span style={{ fontFamily: 'DM Sans, sans-serif' }}>{tx(i18n.projects.viewProject, lang)}</span>
-                    <ArrowRight size={13} />
-                  </button>
+
+                  <div className="ml-auto flex items-center gap-2.5">
+                    {project.repoUrl && (
+                      <a
+                        href={project.repoUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={`${project.name} — ${tx(i18n.projects.viewCode, lang)}`}
+                        title={tx(i18n.projects.viewCode, lang)}
+                        style={{ color: '#64748b', display: 'inline-flex' }}
+                      >
+                        <Github size={14} />
+                      </a>
+                    )}
+                    {project.liveUrl && (
+                      <a
+                        href={project.liveUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={`${project.name} — ${tx(i18n.projects.liveApp, lang)}`}
+                        title={tx(i18n.projects.liveApp, lang)}
+                        style={{ color: '#64748b', display: 'inline-flex' }}
+                      >
+                        <ExternalLink size={14} />
+                      </a>
+                    )}
+                  </div>
                 </div>
               </div>
-            );
-          })}
+            </article>
+          ))}
+        </div>
 
-          {/* More projects placeholder */}
-          <div
-            className="rounded-2xl p-5 flex flex-col items-center justify-center gap-3 border-dashed"
+        {/* GitHub */}
+        <div className="mt-10 flex justify-center">
+          <a
+            href="https://github.com/akakpovi"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-[12.5px]"
             style={{
-              background: 'rgba(10, 20, 44, 0.3)',
-              border: '1px dashed rgba(6, 182, 212, 0.15)',
-              minHeight: '200px',
+              background: 'rgba(30, 41, 74, 0.45)',
+              border: '1px solid rgba(139, 92, 246, 0.22)',
+              color: '#c4b5fd',
+              fontFamily: 'JetBrains Mono, monospace',
+              textDecoration: 'none',
             }}
           >
-            <span className="text-3xl opacity-40">+</span>
-            <p className="text-sm text-center" style={{ color: '#475569', fontFamily: 'JetBrains Mono, monospace' }}>
-              {lang === 'fr' ? 'Plus de projets sur GitHub' : lang === 'de' ? 'Mehr Projekte auf GitHub' : 'More projects on GitHub'}
+            <Github size={14} />
+            github.com/akakpovi
+            <ArrowUpRight size={13} />
+          </a>
+        </div>
+      </div>
+
+      {openProject && <ProjectDialog project={openProject} onClose={close} />}
+    </section>
+  );
+}
+
+function ProjectDialog({ project, onClose }: { project: Project; onClose: () => void }) {
+  const { lang } = useLang();
+  const labels = i18n.projects.labels;
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center p-0 sm:p-6 overflow-y-auto"
+      style={{ background: 'rgba(2, 6, 18, 0.82)', backdropFilter: 'blur(8px)' }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="project-dialog-title"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        className="relative w-full max-w-3xl my-0 sm:my-8 rounded-none sm:rounded-2xl overflow-hidden"
+        style={{
+          background: 'linear-gradient(170deg, #0c1229, #070c1d)',
+          border: `1px solid ${project.accent}35`,
+          boxShadow: '0 30px 90px rgba(0, 0, 0, 0.6)',
+        }}
+      >
+        <div
+          className="relative px-6 py-5 flex items-start justify-between gap-4"
+          style={{
+            background: `linear-gradient(135deg, ${project.accent}22, transparent 75%)`,
+            borderBottom: `1px solid ${project.accent}25`,
+          }}
+        >
+          <div className="min-w-0">
+            <div
+              className="text-[10.5px] tracking-[0.2em] mb-1.5"
+              style={{ fontFamily: 'JetBrains Mono, monospace', color: project.accent }}
+            >
+              {project.monogram}
+            </div>
+            <h3
+              id="project-dialog-title"
+              className="text-lg sm:text-xl leading-snug"
+              style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#f8fafc' }}
+            >
+              {project.name}
+            </h3>
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              <StatusPill status={project.status} />
+              {project.liveUrl && (
+                <a
+                  href={project.liveUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] inline-flex items-center gap-1"
+                  style={{ color: '#67e8f9', fontFamily: 'JetBrains Mono, monospace', textDecoration: 'none' }}
+                >
+                  {project.liveUrl.replace('https://', '').replace(/\/$/, '')}
+                  <ArrowUpRight size={11} />
+                </a>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label={tx(i18n.projects.close, lang)}
+            className="p-2 rounded-lg flex-shrink-0"
+            style={{ background: 'rgba(15, 23, 42, 0.7)', border: '1px solid rgba(148, 163, 184, 0.18)', color: '#cbd5e1' }}
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="px-6 py-6 flex flex-col gap-6 max-h-[70vh] overflow-y-auto">
+          <Block title={tx(labels.overview, lang)}>
+            <p className="text-[14px] leading-relaxed" style={{ color: '#c3cede' }}>
+              {tx(project.overview, lang)}
             </p>
-            <button
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs transition-all"
+          </Block>
+
+          <Block title={tx(labels.problem, lang)}>
+            <p className="text-[14px] leading-relaxed" style={{ color: '#a3b1c6' }}>
+              {tx(project.problem, lang)}
+            </p>
+          </Block>
+
+          <Block title={tx(labels.features, lang)}>
+            <ul className="grid sm:grid-cols-2 gap-2 list-none p-0 m-0">
+              {project.features.map(f => (
+                <li key={f.en} className="flex items-start gap-2 text-[13px]">
+                  <span
+                    className="mt-[7px] w-1.5 h-1.5 rounded-full flex-shrink-0"
+                    style={{ background: project.accent }}
+                  />
+                  <span style={{ color: '#c3cede' }}>{tx(f, lang)}</span>
+                </li>
+              ))}
+            </ul>
+          </Block>
+
+          <Block title={tx(labels.architecture, lang)}>
+            <ul className="flex flex-col gap-2 list-none p-0 m-0">
+              {project.architecture.map(a => (
+                <li key={a.en} className="flex items-start gap-2 text-[13px]">
+                  <Layers size={13} style={{ color: project.accent, flexShrink: 0, marginTop: 2 }} />
+                  <span style={{ color: '#a3b1c6' }}>{tx(a, lang)}</span>
+                </li>
+              ))}
+            </ul>
+          </Block>
+
+          <Block title={tx(labels.contribution, lang)}>
+            <p className="text-[13.5px] leading-relaxed" style={{ color: '#c3cede' }}>
+              {tx(project.contribution, lang)}
+            </p>
+          </Block>
+
+          <Block title={tx(labels.stack, lang)}>
+            <div className="flex flex-wrap gap-1.5">
+              {project.stack.map(t => (
+                <span
+                  key={t}
+                  className="px-2 py-0.5 rounded text-[11px]"
+                  style={{
+                    background: `${project.accent}12`,
+                    border: `1px solid ${project.accent}28`,
+                    color: project.accent,
+                    fontFamily: 'JetBrains Mono, monospace',
+                  }}
+                >
+                  {t}
+                </span>
+              ))}
+            </div>
+          </Block>
+
+          {project.note && (
+            <div
+              className="rounded-xl p-3.5"
+              style={{ background: 'rgba(245, 158, 11, 0.06)', border: '1px solid rgba(245, 158, 11, 0.2)' }}
+            >
+              <div
+                className="text-[10.5px] tracking-[0.14em] uppercase mb-1"
+                style={{ color: '#fcd34d', fontFamily: 'JetBrains Mono, monospace' }}
+              >
+                {tx(labels.note, lang)}
+              </div>
+              <p className="text-[12.5px] leading-relaxed" style={{ color: '#d6c9a8' }}>
+                {tx(project.note, lang)}
+              </p>
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-2.5 pt-1">
+            {project.liveUrl && (
+              <a
+                href={project.liveUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-semibold"
+                style={{
+                  background: `linear-gradient(135deg, ${project.accent}, #8b5cf6)`,
+                  color: '#08101f',
+                  fontFamily: 'DM Sans, sans-serif',
+                  textDecoration: 'none',
+                }}
+              >
+                <ExternalLink size={14} />
+                {tx(i18n.projects.liveApp, lang)}
+              </a>
+            )}
+            {project.repoUrl && (
+              <a
+                href={project.repoUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-medium"
+                style={{
+                  background: 'rgba(30, 41, 74, 0.5)',
+                  border: '1px solid rgba(148, 163, 184, 0.22)',
+                  color: '#e2e8f0',
+                  fontFamily: 'DM Sans, sans-serif',
+                  textDecoration: 'none',
+                }}
+              >
+                <Github size={14} />
+                {tx(i18n.projects.viewCode, lang)}
+              </a>
+            )}
+            <a
+              href="#contact"
+              onClick={e => {
+                e.preventDefault();
+                onClose();
+                setTimeout(() => document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' }), 80);
+              }}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-medium"
               style={{
-                background: 'rgba(6, 182, 212, 0.08)',
-                border: '1px solid rgba(6, 182, 212, 0.2)',
-                color: '#06b6d4',
-                fontFamily: 'JetBrains Mono, monospace',
-              }}
-              onMouseEnter={e => {
-                (e.currentTarget as HTMLElement).style.background = 'rgba(6, 182, 212, 0.15)';
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLElement).style.background = 'rgba(6, 182, 212, 0.08)';
+                background: 'transparent',
+                border: '1px solid rgba(148, 163, 184, 0.22)',
+                color: '#cbd5e1',
+                fontFamily: 'DM Sans, sans-serif',
+                textDecoration: 'none',
               }}
             >
-              <Github size={13} />
-              GitHub
-            </button>
+              {tx(i18n.hero.cta3, lang)}
+              <ArrowRight size={13} />
+            </a>
           </div>
         </div>
       </div>
-    </section>
+    </div>
+  );
+}
+
+function Block({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <h4
+        className="text-[10.5px] tracking-[0.16em] uppercase mb-2"
+        style={{ color: '#7c8aa3', fontFamily: 'JetBrains Mono, monospace' }}
+      >
+        {title}
+      </h4>
+      {children}
+    </div>
   );
 }
