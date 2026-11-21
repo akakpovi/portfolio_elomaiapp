@@ -33,7 +33,7 @@ test.describe('page health', () => {
     page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
     page.on('pageerror', err => errors.push(err.message));
 
-    await page.goto('/');
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { level: 1 })).toContainText(HEADLINES.en);
     await expect(page.getByText('AI Engineer & Full-Stack Developer').first()).toBeVisible();
 
@@ -45,7 +45,7 @@ test.describe('page health', () => {
   });
 
   test('has SEO metadata, canonical URL and structured data', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(page).toHaveTitle(/AI Engineer/);
     const description = await page.locator('meta[name="description"]').getAttribute('content');
     expect(description?.length ?? 0).toBeGreaterThan(80);
@@ -68,7 +68,7 @@ test.describe('page health', () => {
 test.describe('navigation', () => {
   for (const id of SECTION_IDS) {
     test(`navigates to #${id}`, async ({ page }) => {
-      await page.goto('/');
+      await page.goto('/', { waitUntil: 'domcontentloaded' });
       const label = { home: 'Home', solutions: 'AI Solutions', services: 'Services', projects: 'Projects', technologies: 'Technologies', about: 'About', blog: 'Blog', contact: 'Contact' }[id];
       if (isMobile(page)) {
         await page.getByRole('button', { name: /open menu/i }).click();
@@ -84,7 +84,7 @@ test.describe('navigation', () => {
 
   test('mobile menu opens and closes', async ({ page }) => {
     test.skip(!isMobile(page), 'mobile only');
-    await page.goto('/');
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     const toggle = page.getByRole('button', { name: /open menu/i });
     await toggle.click();
     await expect(page.getByRole('navigation', { name: 'Mobile navigation' })).toBeVisible();
@@ -96,7 +96,7 @@ test.describe('navigation', () => {
 test.describe('languages', () => {
   for (const [code, headline] of Object.entries(HEADLINES)) {
     test(`switches to ${code.toUpperCase()}`, async ({ page }) => {
-      await page.goto('/');
+      await page.goto('/', { waitUntil: 'domcontentloaded' });
       await page.locator('header').getByRole('group', { name: 'Language selector' }).getByRole('button', { name: code.toUpperCase() }).click();
       await expect(page.getByRole('heading', { level: 1 })).toContainText(headline);
       expect(await page.locator('html').getAttribute('lang')).toBe(code === 'fr' ? 'fr' : code);
@@ -109,7 +109,7 @@ test.describe('languages', () => {
 
 test.describe('projects', () => {
   test('lists ten projects with status labels', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     const cards = page.locator('#projects article');
     await expect(cards).toHaveCount(10);
     await expect(page.locator('#projects')).toContainText(/portfolio/i);
@@ -117,7 +117,7 @@ test.describe('projects', () => {
 
   test('opens every project detail dialog and closes it', async ({ page }) => {
     test.setTimeout(180_000);
-    await page.goto('/');
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     for (const slug of PROJECT_SLUGS) {
       const card = page.locator('#projects article').filter({ hasText: '' }).nth(PROJECT_SLUGS.indexOf(slug));
       await card.getByRole('button', { name: /Project details|Détails du projet|Projektdetails/ }).first().click();
@@ -131,14 +131,14 @@ test.describe('projects', () => {
   });
 
   test('supports project deep links', async ({ page }) => {
-    await page.goto('/#project-presence');
+    await page.goto('/#project-presence', { waitUntil: 'domcontentloaded' });
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText('Presence');
   });
 
   test('esc closes the project dialog', async ({ page }) => {
-    await page.goto('/#project-metaclean');
+    await page.goto('/#project-metaclean', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('dialog')).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -147,7 +147,7 @@ test.describe('projects', () => {
 
 test.describe('external links', () => {
   test('every freelancer CTA points at the profile', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     const links = page.locator(`a[href="${FREELANCER}"]`);
     const count = await links.count();
     expect(count, 'freelancer links exist in nav, hero and section').toBeGreaterThanOrEqual(4);
@@ -158,7 +158,7 @@ test.describe('external links', () => {
   });
 
   test('verified live application links are the only outward project links', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     const hrefs = await page.locator('#projects a[href^="http"]').evaluateAll(
       els => els.map(e => (e as HTMLAnchorElement).href)
     );
@@ -175,7 +175,7 @@ test.describe('external links', () => {
   });
 
   test('no empty or placeholder hrefs remain', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     const bad = await page.locator('a').evaluateAll(els =>
       els
         .map(e => (e as HTMLAnchorElement).getAttribute('href') || '')
@@ -187,7 +187,7 @@ test.describe('external links', () => {
 
 test.describe('contact', () => {
   test('validates required fields', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.locator('#contact').scrollIntoViewIfNeeded();
     await page.locator('#contact').getByRole('button', { name: /Send Message|Envoyer le message|Nachricht senden/ }).click();
     await expect(page.getByRole('alert').first()).toBeVisible();
@@ -196,7 +196,7 @@ test.describe('contact', () => {
   });
 
   test('rejects an invalid email address', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.locator('#contact').scrollIntoViewIfNeeded();
     await page.getByLabel(/Your name|Votre nom|Ihr Name/).fill('Ada Lovelace');
     await page.getByLabel(/Your email|Votre email|Ihre E-Mail/).fill('not-an-email');
@@ -207,7 +207,7 @@ test.describe('contact', () => {
   });
 
   test('accepts a valid submission and shows the ready state', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.locator('#contact').scrollIntoViewIfNeeded();
     await page.getByLabel(/Your name|Votre nom|Ihr Name/).fill('Ada Lovelace');
     await page.getByLabel(/Your email|Votre email|Ihre E-Mail/).fill('ada@example.com');
@@ -221,7 +221,7 @@ test.describe('contact', () => {
 
 test.describe('sections', () => {
   test('all main sections are present', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     const sections = ['home', 'solutions', 'services', 'projects', 'technologies', 'about', 'freelancer', 'blog', 'contact'];
     for (const id of sections) {
       await expect(page.locator(`#${id}`)).toHaveCount(1);
@@ -230,14 +230,14 @@ test.describe('sections', () => {
   });
 
   test('about section states verified education and languages', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     const about = page.locator('#about');
     await expect(about).toContainText('Hochschule Worms');
     await expect(about).toContainText('C1');
   });
 
   test('footer links are real', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     const footer = page.locator('footer');
     await expect(footer.locator(`a[href="${FREELANCER}"]`)).toHaveCount(1);
     await expect(footer.locator('a[href="https://github.com/akakpovi"]')).toHaveCount(1);

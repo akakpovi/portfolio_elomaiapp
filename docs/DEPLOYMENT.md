@@ -31,7 +31,7 @@ into `nginx:alpine` together with `nginx/default.conf`.
 
 ## Release procedure
 
-1. Build the image locally with a unique tag, e.g. `elomai-portfolio:m24-20261121T1700Z`.
+1. Build the image locally with a unique tag, e.g. `elomai-portfolio:m24.1-20261121` (the tag running in production).
 2. Ship it to the VPS and load it:
    ```bash
    docker save elomai-portfolio:<tag> | gzip | ssh ai-vps 'gunzip | docker load'

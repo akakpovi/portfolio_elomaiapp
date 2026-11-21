@@ -184,6 +184,14 @@ export function Services() {
               <p className="text-[13.5px] leading-relaxed" style={{ color: '#b6c2d6' }}>
                 {tx(i18n.freelancer.desc2, lang)}
               </p>
+              <ul className="flex flex-col gap-1.5 list-none p-0 m-0">
+                {i18n.freelancer.bullets.map(b => (
+                  <li key={b.en} className="flex items-start gap-2 text-[12.5px]">
+                    <Check size={12} style={{ color: '#67e8f9', flexShrink: 0, marginTop: 3 }} />
+                    <span style={{ color: '#c3cede' }}>{tx(b, lang)}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
             <a
               href={SITE.freelancer}

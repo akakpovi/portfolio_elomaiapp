@@ -269,7 +269,7 @@ function ProjectDialog({ project, onClose }: { project: Project; onClose: () => 
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="relative w-full max-w-3xl my-0 sm:my-8 rounded-none sm:rounded-2xl overflow-hidden"
+        className="relative w-full max-w-3xl max-h-[92vh] flex flex-col my-0 sm:my-8 rounded-none sm:rounded-2xl overflow-hidden"
         style={{
           background: 'linear-gradient(170deg, #0c1229, #070c1d)',
           border: `1px solid ${project.accent}35`,
@@ -323,7 +323,7 @@ function ProjectDialog({ project, onClose }: { project: Project; onClose: () => 
           </button>
         </div>
 
-        <div className="px-6 py-6 flex flex-col gap-6 max-h-[70vh] overflow-y-auto">
+        <div className="px-6 py-6 flex flex-col gap-6 flex-1 min-h-0 overflow-y-auto">
           <Block title={tx(labels.overview, lang)}>
             <p className="text-[14px] leading-relaxed" style={{ color: '#c3cede' }}>
               {tx(project.overview, lang)}

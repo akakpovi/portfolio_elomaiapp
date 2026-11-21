@@ -13,17 +13,8 @@ const ARCH_NODES = [
 ];
 
 function ArchNode({ node, index }: { node: typeof ARCH_NODES[0]; index: number }) {
-  const [visible, setVisible] = useState(false);
-  useEffect(() => {
-    const t = setTimeout(() => setVisible(true), index * 180 + 400);
-    return () => clearTimeout(t);
-  }, [index]);
-
   return (
-    <div
-      className="transition-all duration-500"
-      style={{ opacity: visible ? 1 : 0, transform: visible ? 'translateX(0)' : 'translateX(20px)' }}
-    >
+    <div>
       <div
         className="relative px-4 py-2.5 rounded-lg flex items-center gap-3"
         style={{

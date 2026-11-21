@@ -85,7 +85,7 @@ export function Header() {
               <Cpu size={16} className="text-white" />
             </span>
             <span
-              className="text-xs sm:text-sm tracking-[0.18em] uppercase hidden xs:block"
+              className="text-xs sm:text-sm tracking-[0.18em] uppercase hidden sm:block"
               style={{ fontFamily: 'JetBrains Mono, monospace', color: '#c4b5fd', fontWeight: 600 }}
             >
               EL0M<span style={{ color: '#22d3ee' }}>.</span>AI
