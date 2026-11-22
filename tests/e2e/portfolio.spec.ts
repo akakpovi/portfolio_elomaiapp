@@ -70,6 +70,23 @@ test.describe('navigation', () => {
     test(`navigates to #${id}`, async ({ page }) => {
       await page.goto('/', { waitUntil: 'domcontentloaded' });
       const label = { home: 'Home', solutions: 'AI Solutions', services: 'Services', projects: 'Projects', technologies: 'Technologies', about: 'About', blog: 'Blog', contact: 'Contact' }[id];
+
+      // The blog is a real page, not an in-page anchor: its nav entry is a link
+      // that leaves the homepage, so it is checked by navigation instead of
+      // by scrolling to a section.
+      if (id === 'blog') {
+        const nav = isMobile(page)
+          ? page.getByRole('navigation', { name: 'Mobile navigation' })
+          : page.getByRole('navigation', { name: 'Main navigation' });
+        if (isMobile(page)) await page.getByRole('button', { name: /open menu/i }).click();
+        const link = nav.getByRole('link', { name: 'Blog', exact: true });
+        await expect(link).toHaveAttribute('href', /\/blog\/$/);
+        await link.click();
+        await page.waitForURL(/\/blog\/$/);
+        await expect(page.locator('h1')).toBeVisible();
+        return;
+      }
+
       if (isMobile(page)) {
         await page.getByRole('button', { name: /open menu/i }).click();
         await page.getByRole('navigation', { name: 'Mobile navigation' }).getByRole('button', { name: label, exact: true }).click();

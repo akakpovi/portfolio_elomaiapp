@@ -11,6 +11,12 @@ build/
 .env.*
 !.env.example
 
+# Matomo deployment credentials and API tokens (never committed)
+matomo/.tokens/
+matomo/.admin-credentials
+matomo/.reporting-credentials
+matomo/config.ini.php.bak*
+
 # Logs
 *.log
 npm-debug.log*

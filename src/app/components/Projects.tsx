@@ -126,6 +126,8 @@ export function Projects() {
               {/* Cover */}
               <button
                 onClick={() => open(project.slug)}
+                data-event="project_open"
+                data-location="projects_grid"
                 className="relative w-full text-left"
                 style={{ background: `linear-gradient(140deg, ${project.accent}1f, rgba(8, 13, 30, 0.2) 70%)` }}
                 aria-label={`${tx(i18n.projects.viewProject, lang)}: ${project.name}`}
@@ -189,6 +191,8 @@ export function Projects() {
                 >
                   <button
                     onClick={() => open(project.slug)}
+                    data-event="project_open"
+                    data-location="projects_card"
                     className="inline-flex items-center gap-1.5 text-[12px] transition-opacity hover:opacity-80"
                     style={{ color: project.accent, fontFamily: 'DM Sans, sans-serif', fontWeight: 600 }}
                   >

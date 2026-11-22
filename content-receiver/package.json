@@ -1,0 +1,17 @@
+{
+  "name": "elomai-content-receiver",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Authenticated receiver that stores validated articles from the local WordPress and pre-renders the public blog for elomaiapp.com",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "selftest": "node test/selftest.mjs"
+  },
+  "dependencies": {
+    "sanitize-html": "2.14.0"
+  }
+}

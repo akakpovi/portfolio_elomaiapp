@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Datenschutz &amp; Analyse — EL0M AI ENGINEER</title>
+    <meta name="description" content="Wie elomaiapp.com mit Besucherdaten umgeht: cookiefreie, anonymisierte Reichweitenmessung mit selbst gehostetem Matomo, Widerspruchsrecht und Aufbewahrungsfristen." />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://elomaiapp.com/privacy/" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="theme-color" content="#020817" />
+    <style>
+        :root { --bg:#020817; --panel:#0b1226; --text:#e2e8f0; --muted:#94a3b8; --line:rgba(148,163,184,.16); --violet:#8b5cf6; --cyan:#06b6d4; }
+        * { box-sizing:border-box; }
+        body { margin:0; background:var(--bg); color:var(--text); font-family:'DM Sans',system-ui,-apple-system,'Segoe UI',sans-serif; line-height:1.7; }
+        .wrap { max-width:820px; margin:0 auto; padding:0 20px; }
+        header.site { border-bottom:1px solid var(--line); }
+        header.site .wrap { display:flex; align-items:center; justify-content:space-between; height:64px; }
+        .brand { display:inline-flex; align-items:center; gap:10px; text-decoration:none; color:#c4b5fd; font-family:'JetBrains Mono',monospace; font-weight:700; letter-spacing:.16em; font-size:13px; text-transform:uppercase; }
+        .brand-mark { width:28px; height:28px; border-radius:8px; background:linear-gradient(135deg,var(--violet),var(--cyan)); }
+        .back { color:var(--muted); font-size:13px; text-decoration:none; }
+        main { padding:44px 0 64px; }
+        h1 { font-family:'JetBrains Mono',monospace; font-size:clamp(26px,4vw,36px); line-height:1.2; margin:0 0 8px; }
+        h2 { font-family:'JetBrains Mono',monospace; font-size:19px; margin:36px 0 10px; }
+        h3 { font-size:15px; margin:20px 0 6px; color:#e9eef7; }
+        p, li { color:#cbd5e1; font-size:15px; }
+        ul { padding-left:20px; }
+        a { color:#67e8f9; }
+        .note { border-left:3px solid var(--violet); background:rgba(139,92,246,.08); padding:12px 16px; border-radius:0 10px 10px 0; margin:22px 0; font-size:14px; color:#cbd5e1; }
+        .panel { background:rgba(15,23,42,.6); border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin:20px 0; }
+        button { font:inherit; font-weight:600; padding:10px 16px; border-radius:9px; cursor:pointer; border:1px solid rgba(6,182,212,.35); background:rgba(6,182,212,.08); color:#67e8f9; }
+        button:hover { background:rgba(6,182,212,.16); }
+        code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.9em; background:rgba(148,163,184,.14); padding:1px 5px; border-radius:4px; }
+        .status { font-size:13px; color:var(--muted); margin-top:8px; }
+        .lang-split { border-top:1px solid var(--line); margin-top:44px; padding-top:28px; }
+        footer { border-top:1px solid var(--line); padding:24px 0 40px; color:#475569; font-size:12.5px; }
+    </style>
+</head>
+<body>
+<header class="site">
+    <div class="wrap">
+        <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span>EL0M.AI</a>
+        <a class="back" href="/">← Zurück zur Startseite</a>
+    </div>
+</header>
+
+<main class="wrap">
+    <h1>Datenschutz &amp; Analyse</h1>
+    <p style="color:#94a3b8;margin-top:0">Stand: 21. November 2026 · gilt für elomaiapp.com</p>
+
+    <div class="note">
+        Diese Seite beschreibt die tatsächlich eingesetzte Technik. Sie ist keine Rechtsberatung: Eine abschließende
+        rechtliche Bewertung durch eine qualifizierte Stelle steht aus.
+    </div>
+
+    <h2 id="tracking">1. Reichweitenmessung mit Matomo (cookiefrei)</h2>
+    <p>
+        Die Website nutzt eine selbst betriebene Instanz von <strong>Matomo</strong> (freie Software, GPL v3 oder
+        später), die auf demselben Server wie die Website läuft. Es werden <strong>keine Cookies</strong> gesetzt und
+        <strong>keine Kennungen im Browser gespeichert</strong>. Ein Wiedererkennen einzelner Personen über Besuche
+        hinweg findet nicht statt.
+    </p>
+    <h3>Verarbeitete Daten</h3>
+    <ul>
+        <li>aufgerufene Seite (Pfad) und Referrer,</li>
+        <li>gekürzte IP-Adresse (die letzten zwei Bytes werden vor der Speicherung anonymisiert),</li>
+        <li>Browsertyp, Betriebssystem, Geräteart und Sprache aus dem User-Agent,</li>
+        <li>Land/Region auf Basis der anonymisierten IP,</li>
+        <li>Interaktionen ohne Personenbezug, z. B. Klick auf das Freelancer-Profil, E-Mail-Link, Projekt-Detail oder
+            Teilen-Button – jeweils nur als Ereignisname mit Sprache und Seitentitel.</li>
+    </ul>
+    <h3>Nicht erfasst</h3>
+    <ul>
+        <li>keine Formularinhalte (das Kontaktformular öffnet ausschließlich Ihr eigenes E-Mail-Programm),</li>
+        <li>keine E-Mail-Inhalte, keine Passwörter, keine Authentifizierungs-Tokens,</li>
+        <li>keine Werbe- oder Cross-Site-Tracker, keine Profile, kein Standort auf Geräteebene.</li>
+    </ul>
+    <h3>Zweck und Rechtsgrundlage</h3>
+    <p>
+        Zweck ist die technische und redaktionelle Verbesserung des Angebots (welche Artikel und Seiten genutzt
+        werden). Rechtsgrundlage ist das berechtigte Interesse an einer datensparsamen Reichweitenanalyse nach
+        Art. 6 Abs. 1 lit. f DSGVO. Gespeicherte Analyse-Rohdaten werden nach <strong>180 Tagen</strong> automatisch
+        gelöscht; aggregierte Berichte enthalten keine IP-Adressen.
+    </p>
+    <p>
+        Da weder Cookies noch andere Informationen auf Ihrem Gerät gespeichert oder ausgelesen werden, ist nach
+        unserer Einschätzung keine Einwilligung nach § 25 TDDDG erforderlich. Sie können der Verarbeitung
+        dennoch jederzeit widersprechen – die folgende Einstellung wird ausschließlich in Ihrem Browser gespeichert
+        und verhindert das Laden des Tracking-Skripts vollständig.
+    </p>
+
+    <div class="panel">
+        <strong>Analyse in diesem Browser</strong>
+        <p id="opt-state" class="status">Status wird geprüft …</p>
+        <button type="button" id="opt-toggle">Analyse deaktivieren</button>
+        <p class="status">Die Einstellung gilt nur für diesen Browser und wird nicht an den Server übertragen.</p>
+    </div>
+
+    <h2>2. Server-Logfiles</h2>
+    <p>
+        Beim Aufruf werden technisch notwendige Zugriffsdaten verarbeitet (Zeitpunkt, Pfad, Statuscode, gekürzte
+        IP-Adresse), um Betriebssicherheit und Missbrauchserkennung zu gewährleisten. Aufbewahrung: maximal 14 Tage.
+    </p>
+
+    <h2>3. Externe Inhalte</h2>
+    <p>
+        Schriftarten werden derzeit über Google Fonts geladen; dabei wird Ihre IP-Adresse an Google übertragen. Eine
+        lokale Auslieferung der Schriften ist als nächster Schritt vorgesehen. Artikel können eingebettete Videos von
+        YouTube (nocookie-Variante) oder Vimeo enthalten; diese werden <strong>erst nach einem Klick</strong> geladen.
+    </p>
+
+    <h2>4. Kontakt</h2>
+    <p>
+        Verantwortlich für die Verarbeitung: Elom Akakpovi, Worms, Deutschland.
+        E-Mail: <a href="mailto:ekakpovi656@gmail.com">ekakpovi656@gmail.com</a>.
+        Anfragen zu Auskunft, Berichtigung oder Löschung werden ohne unnötige Verzögerung bearbeitet.
+    </p>
+
+    <div class="lang-split" lang="en">
+        <h1 style="font-size:24px">Privacy &amp; analytics (English)</h1>
+        <p>
+            This site uses a <strong>self-hosted Matomo</strong> instance (free software, GPL v3 or later) with
+            <strong>cookies disabled</strong>: no cookie and no identifier is stored in your browser, so visits cannot
+            be linked to a person. The last two bytes of the IP address are anonymised before storage. Only page
+            paths, referrers, browser/OS/device type, language and non-personal interaction events (e.g. “freelancer
+            profile click”, “article share”) are recorded. Form contents, passwords and tokens are never collected.
+        </p>
+        <p>
+            Purpose: improving content and the site. Legal basis: legitimate interest in privacy-friendly audience
+            measurement (Art. 6(1)(f) GDPR). Raw analytics data is deleted after 180 days.
+            You can object at any time with the toggle above; the choice is stored only in your browser.
+        </p>
+        <p style="color:#94a3b8;font-size:13.5px">
+            Controller: Elom Akakpovi, Worms, Germany — <a href="mailto:ekakpovi656@gmail.com">ekakpovi656@gmail.com</a>.
+            This notice is not legal advice; an independent legal review is recommended.
+        </p>
+    </div>
+</main>
+
+<footer class="wrap">
+    © 2026 Elom Akakpovi · <a href="/">elomaiapp.com</a> · <a href="/blog/">Blog</a>
+</footer>
+
+<script>
+    (function () {
+        var KEY = 'elomai_analytics_optout';
+        var button = document.getElementById('opt-toggle');
+        var state = document.getElementById('opt-state');
+
+        function optedOut() {
+            try { return localStorage.getItem(KEY) === '1'; } catch (err) { return false; }
+        }
+
+        function render() {
+            var out = optedOut();
+            state.textContent = out
+                ? 'Analyse ist in diesem Browser deaktiviert.'
+                : 'Analyse ist in diesem Browser aktiv (cookiefrei, anonymisierte IP).';
+            button.textContent = out ? 'Analyse aktivieren' : 'Analyse deaktivieren';
+            button.setAttribute('aria-pressed', out ? 'true' : 'false');
+        }
+
+        button.addEventListener('click', function () {
+            try { localStorage.setItem(KEY, optedOut() ? '0' : '1'); } catch (err) {}
+            render();
+        });
+
+        render();
+    })();
+</script>
+</body>
+</html>

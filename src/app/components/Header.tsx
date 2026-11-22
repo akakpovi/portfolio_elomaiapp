@@ -10,7 +10,7 @@ const NAV_LINKS = [
   { key: 'projects', href: '#projects' },
   { key: 'technologies', href: '#technologies' },
   { key: 'about', href: '#about' },
-  { key: 'blog', href: '#blog' },
+  { key: 'blog', href: '/blog/' },
   { key: 'contact', href: '#contact' },
 ] as const;
 
@@ -56,6 +56,10 @@ export function Header() {
 
   const handleNav = (href: string) => {
     setMobileOpen(false);
+    if (href.startsWith('/')) {
+      window.location.assign(href);
+      return;
+    }
     const id = href.replace('#', '');
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
     setActiveSection(id);
@@ -96,18 +100,31 @@ export function Header() {
           <nav className="hidden lg:flex items-center gap-0.5" aria-label="Main navigation">
             {NAV_LINKS.map(({ key, href }) => {
               const id = href.slice(1);
-              const active = activeSection === id;
-              return (
+              const active = !href.startsWith('/') && activeSection === id;
+              const style = {
+                color: active ? '#a5b4fc' : '#94a3b8',
+                fontFamily: 'DM Sans, sans-serif',
+                background: active ? 'rgba(139, 92, 246, 0.08)' : 'transparent',
+                textDecoration: 'none',
+              };
+              // The blog is a real page (not an in-page anchor), so it renders as a link.
+              return href.startsWith('/') ? (
+                <a
+                  key={key}
+                  href={href}
+                  aria-current={active ? 'true' : undefined}
+                  className="px-2.5 py-1.5 text-[13px] rounded-md relative transition-colors duration-200"
+                  style={style}
+                >
+                  {tx(i18n.nav[key as keyof typeof i18n.nav], lang)}
+                </a>
+              ) : (
                 <button
                   key={key}
                   onClick={() => handleNav(href)}
                   aria-current={active ? 'true' : undefined}
                   className="px-2.5 py-1.5 text-[13px] rounded-md relative transition-colors duration-200"
-                  style={{
-                    color: active ? '#a5b4fc' : '#94a3b8',
-                    fontFamily: 'DM Sans, sans-serif',
-                    background: active ? 'rgba(139, 92, 246, 0.08)' : 'transparent',
-                  }}
+                  style={style}
                 >
                   {tx(i18n.nav[key as keyof typeof i18n.nav], lang)}
                 </button>
@@ -181,16 +198,27 @@ export function Header() {
           }}
         >
           <nav className="max-w-7xl mx-auto px-4 py-4 flex flex-col gap-1" aria-label="Mobile navigation">
-            {NAV_LINKS.map(({ key, href }) => (
-              <button
-                key={key}
-                onClick={() => handleNav(href)}
-                className="text-left px-4 py-3 rounded-lg text-sm"
-                style={{ fontFamily: 'DM Sans, sans-serif', color: '#cbd5e1' }}
-              >
-                {tx(i18n.nav[key as keyof typeof i18n.nav], lang)}
-              </button>
-            ))}
+            {NAV_LINKS.map(({ key, href }) =>
+              href.startsWith('/') ? (
+                <a
+                  key={key}
+                  href={href}
+                  className="text-left px-4 py-3 rounded-lg text-sm"
+                  style={{ fontFamily: 'DM Sans, sans-serif', color: '#cbd5e1', textDecoration: 'none' }}
+                >
+                  {tx(i18n.nav[key as keyof typeof i18n.nav], lang)}
+                </a>
+              ) : (
+                <button
+                  key={key}
+                  onClick={() => handleNav(href)}
+                  className="text-left px-4 py-3 rounded-lg text-sm"
+                  style={{ fontFamily: 'DM Sans, sans-serif', color: '#cbd5e1' }}
+                >
+                  {tx(i18n.nav[key as keyof typeof i18n.nav], lang)}
+                </button>
+              ),
+            )}
             <a
               href={SITE.freelancer}
               target="_blank"

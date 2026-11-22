@@ -1,0 +1,102 @@
+# Local / standalone Matomo stack used for functional testing before anything
+# reaches the production VPS. The production deployment reuses the same image
+# and services, attached to the existing proxy network and bound to loopback.
+services:
+  matomo:
+    build: .
+    image: elomai-matomo:5.14.3
+    container_name: matomo-test
+    restart: unless-stopped
+    environment:
+      MATOMO_DATABASE_HOST: matomo-db:3306
+      MATOMO_DATABASE_ADAPTER: mysql
+      MATOMO_DATABASE_TABLES_PREFIX: matomo_
+      MATOMO_DATABASE_USERNAME: matomo
+      MATOMO_DATABASE_PASSWORD: ${MATOMO_DB_PASSWORD:?set MATOMO_DB_PASSWORD in .env}
+      MATOMO_DATABASE_DBNAME: matomo
+    volumes:
+      - matomo_html:/var/www/html
+    ports:
+      - "127.0.0.1:${MATOMO_LOCAL_PORT:-8082}:80"
+    depends_on:
+      matomo-db:
+        condition: service_healthy
+    networks:
+      - matomo_net
+    mem_limit: 640m
+    cpus: 0.60
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  matomo-db:
+    image: mariadb:11
+    container_name: matomo-db-test
+    restart: unless-stopped
+    # Conservative footprint for a 1 vCPU / 3.9 GB host shared with other apps.
+    # Keep the flag list minimal: MariaDB 11 rejects legacy InnoDB options and
+    # then aborts during first-time initialisation.
+    command: >
+      --innodb-buffer-pool-size=128M
+      --max-connections=50
+    environment:
+      MARIADB_DATABASE: matomo
+      MARIADB_USER: matomo
+      MARIADB_PASSWORD: ${MATOMO_DB_PASSWORD:?set MATOMO_DB_PASSWORD in .env}
+      MARIADB_ROOT_PASSWORD: ${MATOMO_DB_ROOT_PASSWORD:?set MATOMO_DB_ROOT_PASSWORD in .env}
+    volumes:
+      - matomo_db:/var/lib/mysql
+    networks:
+      - matomo_net
+    mem_limit: 448m
+    cpus: 0.40
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # Archiving writes the reports the WordPress dashboard reads. Runs hourly,
+  # off the request path.
+  matomo-archive:
+    image: elomai-matomo:5.14.3
+    container_name: matomo-archive-test
+    restart: unless-stopped
+    # This container runs the archiver CLI only and never starts a web server,
+    # so an HTTP health probe would always report it as unhealthy.
+    healthcheck:
+      disable: true
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        sleep 120
+        while true; do
+          php /var/www/html/console core:archive --url=http://matomo-test/matomo/ --no-interaction --quiet || true
+          sleep 3600
+        done
+    volumes:
+      - matomo_html:/var/www/html
+    depends_on:
+      matomo:
+        condition: service_healthy
+    networks:
+      - matomo_net
+    mem_limit: 320m
+    cpus: 0.25
+
+volumes:
+  matomo_html:
+  matomo_db:
+
+networks:
+  matomo_net:
+    driver: bridge

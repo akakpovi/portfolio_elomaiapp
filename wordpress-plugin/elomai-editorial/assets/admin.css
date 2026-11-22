@@ -1,0 +1,94 @@
+/* EL0M Editorial — admin styling (scoped to plugin screens). */
+
+.elomai-wrap { max-width: 1180px; }
+.elomai-wrap h1 { margin-bottom: 6px; }
+.elomai-lead { color: #50575e; max-width: 780px; margin-top: 0; }
+
+.elomai-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 18px 0; }
+.elomai-card {
+    background: #fff; border: 1px solid #dcdcde; border-radius: 8px;
+    padding: 14px 16px; display: flex; flex-direction: column; gap: 6px;
+}
+.elomai-card strong { font-size: 22px; line-height: 1.1; color: #1d2327; }
+.elomai-card-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #646970; }
+.elomai-card--ok { border-left: 3px solid #00a32a; }
+.elomai-card--warn { border-left: 3px solid #dba617; }
+.elomai-card--error { border-left: 3px solid #d63638; }
+.elomai-card--info { border-left: 3px solid #2271b1; }
+
+.elomai-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; margin: 18px 0; }
+.elomai-panel { background: #fff; border: 1px solid #dcdcde; border-radius: 8px; padding: 16px 18px; }
+.elomai-panel--wide { grid-column: 1 / -1; }
+.elomai-panel h2 { margin: 4px 0 12px; font-size: 14px; text-transform: uppercase; letter-spacing: .05em; color: #646970; }
+
+.elomai-bars { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.elomai-bars li { display: grid; grid-template-columns: 180px 1fr auto; gap: 10px; align-items: center; font-size: 12.5px; }
+.elomai-bar { height: 8px; border-radius: 999px; background: #f0f0f1; overflow: hidden; display: block; }
+.elomai-bar > span { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #8b5cf6, #06b6d4); }
+.elomai-bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.elomai-lang { font-family: monospace; font-weight: 700; color: #3c434a; }
+
+.elomai-chart { width: 100%; height: auto; margin: 6px 0 18px; background: #fafafa; border-radius: 6px; }
+.elomai-chart-label { font-size: 9px; fill: #8c8f94; font-family: monospace; }
+
+.elomai-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 1.7; }
+.elomai-pill--ok { background: #edfaef; color: #007017; border: 1px solid #b8e6bf; }
+.elomai-pill--warn { background: #fef8e7; color: #8a6100; border: 1px solid #f0d98c; }
+.elomai-pill--error { background: #fcf0f1; color: #b32d2e; border: 1px solid #f3b8ba; }
+.elomai-pill--info { background: #eef6fc; color: #135e96; border: 1px solid #b6d9f5; }
+.elomai-pill--muted { background: #f0f0f1; color: #50575e; border: 1px solid #dcdcde; }
+
+.elomai-tag { font-family: monospace; font-size: 11px; padding: 1px 6px; border-radius: 4px; background: #f0f0f1; border: 1px solid #dcdcde; }
+.elomai-muted { color: #646970; font-size: 12px; }
+.elomai-error { color: #b32d2e; font-size: 12px; }
+.elomai-warn { color: #8a6100; font-size: 12px; }
+.elomai-ok { color: #007017; font-size: 12px; }
+.elomai-section-title { margin-top: 32px; }
+
+.elomai-kv { margin: 8px 0 12px; }
+.elomai-kv li { display: flex; justify-content: space-between; gap: 8px; margin: 0 0 4px; font-size: 12px; }
+.elomai-kv span { color: #646970; }
+.elomai-ellipsis { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.elomai-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.elomai-list { margin: 6px 0 10px; }
+.elomai-list li { display: flex; gap: 8px; align-items: baseline; font-size: 12.5px; }
+.elomai-list .lang { font-family: monospace; font-size: 10.5px; background: #f0f0f1; padding: 1px 5px; border-radius: 3px; }
+
+.elomai-status { display: flex; align-items: center; gap: 8px; font-weight: 600; margin: 0 0 10px; }
+.elomai-status .dot { width: 9px; height: 9px; border-radius: 50%; background: #8c8f94; }
+.elomai-status--ok .dot { background: #00a32a; }
+.elomai-status--warn .dot { background: #dba617; }
+.elomai-status--error .dot { background: #d63638; }
+.elomai-status--info .dot { background: #2271b1; }
+
+.elomai-row-actions .button { margin: 0 4px 4px 0; }
+.elomai-table td { vertical-align: top; }
+
+.elomai-field { margin: 0 0 14px; }
+.elomai-field label { display: block; margin-bottom: 4px; }
+.elomai-social-field { margin-bottom: 16px; }
+.elomai-social-field textarea { font-family: monospace; font-size: 12px; }
+.elomai-social-actions { display: flex; align-items: center; gap: 8px; margin: 6px 0 0; }
+.elomai-copy-feedback { color: #007017; font-size: 12px; }
+
+.elomai-periods { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 10px; }
+.elomai-custom-range { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
+.elomai-meta-line { font-size: 12px; color: #50575e; }
+.elomai-empty { background: #fff; border: 1px dashed #c3c4c7; border-radius: 8px; padding: 22px; margin: 18px 0; }
+
+.elomai-calendar-nav { display: flex; align-items: center; gap: 12px; margin: 12px 0 16px; }
+.elomai-calendar { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #dcdcde; border-radius: 8px; }
+.elomai-calendar th { background: #f6f7f7; font-size: 11px; text-transform: uppercase; color: #646970; padding: 8px; border: 1px solid #e5e5e5; }
+.elomai-calendar td { border: 1px solid #e5e5e5; vertical-align: top; height: 84px; width: 14%; padding: 6px; }
+.elomai-calendar td.is-empty { background: #fafafa; }
+.elomai-day { display: block; font-size: 11px; color: #8c8f94; margin-bottom: 4px; }
+.elomai-event { display: block; font-size: 11px; line-height: 1.4; padding: 2px 4px; border-radius: 4px; margin-bottom: 3px; text-decoration: none; }
+.elomai-event.elomai-pill--ok { background: #edfaef; color: #007017; }
+.elomai-event.elomai-pill--warn { background: #fef8e7; color: #8a6100; }
+.elomai-event.elomai-pill--info { background: #eef6fc; color: #135e96; }
+.elomai-event.elomai-pill--muted { background: #f0f0f1; color: #50575e; }
+
+@media (max-width: 782px) {
+    .elomai-bars li { grid-template-columns: 120px 1fr auto; }
+    .elomai-calendar td { height: 64px; }
+}

@@ -1,0 +1,133 @@
+<!--
+  Source of the first published article. Imported into WordPress with:
+    wp post create content/articles/publishing-from-wordpress.html \
+       --post_title="A private WordPress blog that publishes itself as static pages" \
+       --post_status=publish --post_category=devops-cloud-infrastructure
+
+  Everything below describes the system that actually runs elomaiapp.com/blog.
+  No benchmarks, traffic numbers or client results are claimed.
+-->
+<p>This site is published from a WordPress installation that runs on a laptop in Worms and is not reachable from
+the internet. The public pages you are reading are static HTML files served by nginx. Between the two there is a
+small authenticated receiver that validates, stores and renders each article. This post explains why the split
+exists, what crosses the boundary, and where the design gives up convenience for safety.</p>
+
+<h2>The constraint that shaped the design</h2>
+
+<p>Three requirements were non-negotiable:</p>
+
+<ul>
+  <li><strong>WordPress stays private.</strong> No inbound port, no public <code>/wp-admin</code>, no database port
+      opened to the internet. The editorial machine can be switched off without taking the website down.</li>
+  <li><strong>The public site stays fast.</strong> No PHP or database on the request path: an article is an HTML
+      file, an image and a handful of CSS rules.</li>
+  <li><strong>SEO has to work without JavaScript.</strong> Crawlers must receive a real title, description,
+      canonical URL, hreflang alternates and JSON-LD in the initial response.</li>
+</ul>
+
+<p>A client-side React route fetching articles from an API would satisfy the first two constraints but not the
+third. Server-side rendering on a single-vCPU VPS would satisfy the third but add a runtime that has to be
+maintained. Publishing pre-rendered files satisfies all three, at the cost of a slightly slower publish step.</p>
+
+<h2>Three components, one direction</h2>
+
+<table>
+  <thead>
+    <tr><th>Component</th><th>Runs on</th><th>Responsibility</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>WordPress + plugin</td><td>Local Docker</td><td>Editing, media, translations, SEO fields, signing the payload</td></tr>
+    <tr><td>Content receiver</td><td>VPS, private network</td><td>Authentication, validation, versioning, rendering</td></tr>
+    <tr><td>nginx</td><td>VPS</td><td>Serving the rendered files and the portfolio SPA</td></tr>
+  </tbody>
+</table>
+
+<p>Traffic flows in exactly one direction: WordPress calls the receiver over HTTPS. The receiver never calls
+WordPress, and the browser never talks to either of them. The receiver writes into a Docker volume that nginx
+mounts read-only, so a successful sync is visible on the public site immediately — no restart, no deploy.</p>
+
+<h2>What actually crosses the boundary</h2>
+
+<p>The plugin does not send WordPress HTML as-is. It builds a document with an explicit contract: a UUID, a
+version, the language, the slug, the sanitised body, exported WebP variants of every image, the featured image,
+categories, translation links, project references and SEO fields. Images travel as base64 inside the payload and
+are addressed by their SHA-256, so the receiver can deduplicate them and nginx can cache them immutably.</p>
+
+<p>Before anything leaves the machine, WordPress runs the body through its own escaping and the plugin removes
+scripts, styles, inline handlers and every iframe that is not a YouTube or Vimeo embed. The receiver sanitises the
+body again with an allowlist. Duplicated defence is deliberate: a compromised editor account should not be able to
+inject script into a page that is served from a different origin.</p>
+
+<pre><code class="language-bash"># The transport is a signed POST, not a plugin-to-plugin handshake
+timestamp=$(date +%s)
+nonce=$(openssl rand -hex 16)
+signature=$(printf '%s' "$timestamp.$nonce.$body" \
+  | openssl dgst -sha256 -hmac "$ELOMAI_SYNC_SECRET" -hex | awk '{print $2}')</code></pre>
+
+<h2>Idempotency: why a retry cannot create a second article</h2>
+
+<p>Every payload carries an idempotency key of the form <code>uuid:version:operation</code>. The version is
+incremented once, when the content hash changes — not on every attempt. A network timeout followed by a retry
+therefore reuses the same key, and the receiver answers with the result of the first successful write instead of
+creating a duplicate.</p>
+
+<ol>
+  <li>The plugin hashes the article content.</li>
+  <li>If the hash matches the last synchronised hash, nothing is sent.</li>
+  <li>Otherwise the version is incremented and stored <em>before</em> the request.</li>
+  <li>Failures are retried with backoff: 1, 5, 15, 60 and 360 minutes, then an hourly sweep.</li>
+  <li>Only an HTTP 200 answer followed by a successful <code>HEAD</code> on the public URL marks the article as <em>synchronised</em>.</li>
+</ol>
+
+<p>That last step matters. “The receiver accepted it” and “the page is publicly reachable” are different facts, and
+the dashboard shows them separately. When the confirmation fails, the article stays visible in the editorial list
+with a clear warning instead of a green badge.</p>
+
+<h2>Rendering, sitemap and languages</h2>
+
+<p>On each successful sync the receiver regenerates the affected listing pages, the article page, the RSS-less feed
+consumed by the portfolio homepage, and the XML sitemap. Unpublishing removes the page and its sitemap entry in the
+same step, so a retired article cannot stay indexed through a stale sitemap.</p>
+
+<p>Languages are handled as a relationship, not as a translation service. Each article has a primary language and
+optional sibling articles. hreflang links are only emitted for siblings that are themselves published — a
+translation that exists in WordPress as a draft never produces a link to a 404.</p>
+
+<blockquote>
+  <p>An AI-generated translation stays a draft until a human reviews it and publishes it explicitly. The public site
+  shows a language notice instead of an empty page.</p>
+</blockquote>
+
+<h2>The security model in one paragraph</h2>
+
+<p>The local installation accepts no inbound connections. Requests carry an HMAC-SHA256 signature over the
+timestamp, a random nonce and the raw body; the receiver rejects anything older than five minutes, anything whose
+nonce has been reused with a different body, and anything over the size limit. Only one path is exposed publicly:
+<code>/content-api/v1/sync</code>. The Matomo installation next to it exposes its tracking endpoints and a
+POST-only API for reporting, never its administration interface. Logs contain event names and HTTP status codes —
+never the shared secret, the API token or the article body.</p>
+
+<h2>What this design does not do</h2>
+
+<ul>
+  <li><strong>No live preview from the public domain.</strong> You preview in WordPress, then publish. The first
+      time you see the rendered page is after the sync.</li>
+  <li><strong>No comments, no newsletter, no search index server.</strong> Search on the blog is client-side over
+      the published index.</li>
+  <li><strong>No offline publishing.</strong> If the machine is off, the article waits in WordPress with the status
+      “pending” and the retry queue picks it up later. Nothing is claimed to be published before the public URL
+      answers.</li>
+  <li><strong>No automatic social publishing.</strong> The plugin prepares editable drafts with canonical links and
+      UTM parameters; sending them stays a human decision.</li>
+</ul>
+
+<h2>What I would change next</h2>
+
+<p>The weakest point is the featured image pipeline: WordPress converts to WebP with GD or Imagick, which is good
+enough for screenshots and diagrams but not for photography. The second improvement is a preview endpoint that
+renders a draft to an unlisted URL with <code>noindex</code>, which would remove the “publish to see it” step
+without weakening the private-installation rule.</p>
+
+<p>If you are building something similar — a private editorial workflow in front of a static public site — the
+trade-off is worth naming explicitly: you are buying simplicity at request time with complexity at publish time.
+For a technical blog with a handful of articles per month, that is the right exchange.</p>

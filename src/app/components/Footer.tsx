@@ -15,7 +15,7 @@ const NAV_LINKS = [
   { key: 'projects', href: '#projects' },
   { key: 'technologies', href: '#technologies' },
   { key: 'about', href: '#about' },
-  { key: 'blog', href: '#blog' },
+  { key: 'blog', href: '/blog/' },
   { key: 'contact', href: '#contact' },
 ] as const;
 
@@ -24,6 +24,7 @@ export function Footer() {
   const year = new Date().getFullYear();
 
   const scrollTo = (href: string) => (e: React.MouseEvent) => {
+    if (href.startsWith('/')) return; // real page navigation
     e.preventDefault();
     document.getElementById(href.replace('#', ''))?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -184,6 +185,13 @@ export function Footer() {
         >
           <p className="text-[11.5px] text-center sm:text-left" style={{ color: '#475569', fontFamily: 'JetBrains Mono, monospace' }}>
             © {year} {SITE.name}. {tx(i18n.footer.rights, lang)}
+            <a
+              href="/privacy/"
+              className="ml-2"
+              style={{ color: '#64748b', textDecoration: 'underline', textUnderlineOffset: '2px' }}
+            >
+              {lang === 'de' ? 'Datenschutz' : lang === 'fr' ? 'Confidentialité' : 'Privacy'}
+            </a>
           </p>
 
           <div

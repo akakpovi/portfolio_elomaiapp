@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import { LanguageProvider } from './components/i18n';
+import { initAnalytics } from './lib/analytics';
 import { Header } from './components/Header';
 import { Hero } from './components/Hero';
 import { Solutions } from './components/Solutions';
@@ -27,6 +29,11 @@ function Divider({ color }: { color: string }) {
 }
 
 export default function App() {
+  // Matomo is configured once, and only on the production host.
+  useEffect(() => {
+    initAnalytics();
+  }, []);
+
   return (
     <LanguageProvider>
       <div
