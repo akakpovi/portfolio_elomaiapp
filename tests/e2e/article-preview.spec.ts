@@ -22,28 +22,34 @@ const ARTICLES = [
     path: '/blog/en/spf-dkim-dmarc-monitoring/',
     h1: 'SPF, DKIM and DMARC: email authentication you can monitor',
     seoTitle: 'SPF, DKIM and DMARC, monitored — EL0M AI ENGINEER',
+    // M09.1.4: the dedicated WordPress og_title, not the SEO title.
+    ogTitle: 'SPF, DKIM and DMARC: email authentication you can monitor',
   },
   {
     lang: 'de',
     path: '/blog/de/spf-dkim-dmarc-ueberwachen/',
     h1: 'SPF, DKIM und DMARC: E-Mail-Authentifizierung überwachen',
     seoTitle: 'SPF, DKIM und DMARC überwachen — EL0M AI ENGINEER',
+    ogTitle: 'SPF, DKIM und DMARC: E-Mail-Authentifizierung überwachen',
   },
   {
     lang: 'fr',
     path: '/blog/fr/spf-dkim-dmarc-surveiller/',
     h1: "SPF, DKIM et DMARC : surveiller l'authentification e-mail",
     seoTitle: 'SPF, DKIM et DMARC : les surveiller — EL0M AI ENGINEER',
+    ogTitle: "SPF, DKIM et DMARC : surveiller l'authentification e-mail",
   },
 ];
 
 const PRIMARY = ARTICLES[0];
-// tests/e2e -> portfolio/docs/screenshots/m09-1-1, independent of the cwd.
-const SCREENSHOT_DIR = path.resolve(__dirname, '../../docs/screenshots/m09-1-1');
+// tests/e2e -> portfolio/docs/screenshots/m09-1-3, independent of the cwd.
+// M09.1.3 re-captures the evidence after the editorial pass; the M09.1.1 set is kept.
+const SCREENSHOT_DIR = path.resolve(__dirname, '../../docs/screenshots/m09-1-3');
 
+// These must match the projects in playwright.config.ts.
 const VIEWPORTS = [
   { name: 'desktop-1440x900', width: 1440, height: 900 },
-  { name: 'laptop-1280x800', width: 1280, height: 800 },
+  { name: 'laptop-1366x768', width: 1366, height: 768 },
   { name: 'tablet-768x1024', width: 768, height: 1024 },
   { name: 'mobile-390x844', width: 390, height: 844 },
 ];
@@ -83,7 +89,8 @@ test.describe('article 6 — English preview', () => {
     await expect(body.locator('pre code')).toHaveCount(5);
     await expect(body.locator('pre code.language-python')).toHaveCount(2);
     await expect(body.locator('table')).toHaveCount(1);
-    await expect(body.locator('table tbody tr')).toHaveCount(7);
+    // v, p, sp, np, adkim/aspf, rua, ruf and t (added in the M09.1.3 pass).
+    await expect(body.locator('table tbody tr')).toHaveCount(8);
     await expect(body).toContainText('v=DMARC1; p=none');
     await expect(body).toContainText('dns.resolver');
     // No unresolved shortcode or template placeholder survived.
@@ -212,7 +219,11 @@ test.describe('article 6 — English preview', () => {
     expect(description?.length ?? 0).toBeLessThanOrEqual(155);
 
     await expect(page.locator('meta[property="og:type"]')).toHaveAttribute('content', 'article');
-    await expect(page.locator('meta[property="og:title"]')).toHaveAttribute('content', PRIMARY.seoTitle);
+    // M09.1.4: og:title comes from the dedicated WordPress og_title field; the
+    // document title above stays the SEO title.
+    await expect(page.locator('meta[property="og:title"]')).toHaveCount(1);
+    await expect(page.locator('meta[property="og:title"]')).toHaveAttribute('content', PRIMARY.ogTitle);
+    expect(PRIMARY.ogTitle).not.toBe(PRIMARY.seoTitle);
     // The social card is a dedicated 1200×630 JPEG, not the 16:9 cover.
     await expect(page.locator('meta[property="og:image"]')).toHaveAttribute('content', /^https:\/\/elomaiapp\.com\/media\/[a-f0-9]{64}\.(?:jpg|jpeg)$/);
     await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute('content', 'summary_large_image');
@@ -350,6 +361,8 @@ test.describe('article 6 — English preview', () => {
       await page.goto(article.path, { waitUntil: 'domcontentloaded' });
       await expect(page.locator('h1')).toHaveText(article.h1);
       await expect(page).toHaveTitle(article.seoTitle);
+      await expect(page.locator('meta[property="og:title"]')).toHaveCount(1);
+      await expect(page.locator('meta[property="og:title"]')).toHaveAttribute('content', article.ogTitle);
       const description = await page.locator('meta[name="description"]').getAttribute('content');
       expect(description?.length ?? 0).toBeGreaterThanOrEqual(130);
       expect(description?.length ?? 0).toBeLessThanOrEqual(155);

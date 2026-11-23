@@ -2,6 +2,8 @@ import {
   e,
   t,
   formatDate,
+  formatDateTime,
+  commentCountLabel,
   articlePath,
   listingPath,
   categoryPath,
@@ -9,8 +11,9 @@ import {
   footerHtml,
   pageShell,
   PUBLIC_BASE,
-  LANGS,
   LANG_LABEL,
+  getAvailableLangs,
+  categoryLabel,
 } from './templates.mjs';
 
 /* ------------------------------------------------------------ shared parts */
@@ -88,14 +91,107 @@ function ogImageFor(article) {
   return undefined;
 }
 
+/* -------------------------------------------------------------- comments */
+
+function commentItem(comment, lang) {
+  const created = formatDateTime(comment.createdAt, lang);
+  const replies = (comment.replies || [])
+    .map((reply) => commentItem({ ...reply, replies: [] }, lang))
+    .join('');
+  return `<li class="comment" id="comment-${e(comment.id)}" data-comment-id="${e(comment.id)}">
+        <div class="comment-head">
+          <span class="comment-author">${e(comment.author)}</span>
+          ${created ? `<time datetime="${e(comment.createdAt)}">${e(created)}</time>` : ''}
+        </div>
+        <div class="comment-body">${e(comment.content).replace(/\n/g, '<br />')}</div>
+        <button type="button" class="comment-reply" data-reply="${e(comment.id)}" data-reply-name="${e(comment.author)}">${e(t('commentReply', lang))}</button>
+        ${replies ? `<ul class="comment-replies">${replies}</ul>` : ''}
+      </li>`;
+}
+
+/**
+ * The public comment interface. Server-rendered so approved comments are
+ * readable without JavaScript and indexable; blog.js adds submission,
+ * replies and pagination on top.
+ */
+function commentSection({ article, lang, comments }) {
+  const enabled = comments.enabled !== false;
+  const total = Number(comments.total) || 0;
+  const roots = comments.roots || [];
+  const heading = total > 0 ? commentCountLabel(total, lang) : t('comments', lang);
+
+  const list = roots.length
+    ? `<ul class="comment-list">${roots.map((comment) => commentItem(comment, lang)).join('')}</ul>`
+    : `<p class="comments-empty">${e(t('commentsEmpty', lang))}</p>`;
+
+  if (!enabled) {
+    return `<section class="comments" id="comments" aria-labelledby="comments-title" data-article="${e(article.uuid)}" data-comments="closed">
+      <h2 id="comments-title">${e(t('comments', lang))}</h2>
+      <p class="comments-intro">${e(t('commentsClosed', lang))}</p>
+    </section>`;
+  }
+
+  return `<section class="comments" id="comments" aria-labelledby="comments-title" data-article="${e(article.uuid)}" data-count="${total}" data-next="${e(comments.nextCursor || '')}" data-comments="open">
+      <h2 id="comments-title">${e(heading)}</h2>
+      <p class="comments-intro">${e(t('commentsIntro', lang))}</p>
+      ${list}
+      ${comments.nextCursor ? `<p class="comments-more-wrap"><button type="button" class="btn btn-ghost" data-comments-more>${e(t('commentLoadMore', lang))}</button></p>` : ''}
+      <script type="application/json" class="comments-labels">${JSON.stringify({
+        reply: t('commentReply', lang),
+        replyingTo: t('commentReplyingTo', lang),
+        sending: t('commentSending', lang),
+        received: t('commentReceived', lang),
+        error: t('commentError', lang),
+        rateLimited: t('commentRateLimited', lang),
+        required: t('commentRequired', lang),
+        loadMore: t('commentLoadMore', lang),
+      }).replace(/</g, '\\u003c')}</script>
+      <form class="comment-form" novalidate data-comment-form>
+        <h3>${e(t('commentFormTitle', lang))}</h3>
+        <div class="comment-row">
+          <label class="comment-field" for="comment-author">
+            <span>${e(t('commentName', lang))}</span>
+            <input id="comment-author" type="text" name="author" required minlength="2" maxlength="60" autocomplete="name" />
+          </label>
+          <div class="comment-field">
+            <label for="comment-email"><span>${e(t('commentEmail', lang))}</span></label>
+            <input id="comment-email" type="email" name="email" required maxlength="254" autocomplete="email" aria-describedby="comment-email-hint" />
+            <small id="comment-email-hint">${e(t('commentEmailHint', lang))}</small>
+          </div>
+        </div>
+        <label class="comment-field" for="comment-content">
+          <span>${e(t('commentContent', lang))}</span>
+          <textarea id="comment-content" name="content" required rows="5" maxlength="4000"></textarea>
+        </label>
+        <label class="comment-consent">
+          <input type="checkbox" name="consent" required />
+          <span>${e(t('commentPrivacy', lang))} <a href="/privacy/">${e(t('commentPrivacyLink', lang))}</a></span>
+        </label>
+        <div class="comment-hp" aria-hidden="true">
+          <label>Website<input type="text" name="website" tabindex="-1" autocomplete="off" /></label>
+        </div>
+        <input type="hidden" name="parent" value="" />
+        <p class="comment-reply-note" hidden data-reply-note></p>
+        <div class="comment-actions">
+          <button type="submit" class="btn btn-primary" data-comment-submit>${e(t('commentSubmit', lang))}</button>
+          <button type="button" class="btn btn-ghost" data-comment-cancel hidden>${e(t('commentCancelReply', lang))}</button>
+        </div>
+        <p class="comment-notice" role="status" aria-live="polite" data-comment-notice></p>
+      </form>
+    </section>`;
+}
+
 /* --------------------------------------------------------------- article */
 
-export function articlePage({ article, related, siteId }) {
+export function articlePage({ article, related, siteId, comments = { enabled: true, roots: [], total: 0 } }) {
   const lang = article.lang;
   const canonical = `${PUBLIC_BASE}${articlePath(article)}`;
   const seoTitle = (article.seo && article.seo.title) || `${article.title} — EL0M AI ENGINEER`;
   const description = (article.seo && article.seo.description) || article.excerpt || '';
   const primaryCategory = article.categories && article.categories[0];
+  const categoryName = primaryCategory
+    ? categoryLabel(primaryCategory.slug, primaryCategory.name, lang)
+    : null;
 
   const alternates = [
     ...(article.translations || []).map((tr) => ({
@@ -129,7 +225,7 @@ export function articlePage({ article, related, siteId }) {
       url: canonical,
       image: article.featured && article.featured.src ? `${PUBLIC_BASE}${article.featured.src}` : `${PUBLIC_BASE}/og-image.png`,
       keywords: (article.seo && article.seo.keywords ? article.seo.keywords : article.tags || []).join(', '),
-      articleSection: primaryCategory ? primaryCategory.name : undefined,
+      articleSection: categoryName || undefined,
       wordCount: article.wordCount || undefined,
     },
     {
@@ -139,7 +235,7 @@ export function articlePage({ article, related, siteId }) {
         { '@type': 'ListItem', position: 1, name: t('breadcrumbHome', lang), item: `${PUBLIC_BASE}/` },
         { '@type': 'ListItem', position: 2, name: t('blog', lang), item: `${PUBLIC_BASE}${listingPath(lang)}` },
         ...(primaryCategory
-          ? [{ '@type': 'ListItem', position: 3, name: primaryCategory.name, item: `${PUBLIC_BASE}${categoryPath(lang, primaryCategory.slug)}` }]
+          ? [{ '@type': 'ListItem', position: 3, name: categoryName, item: `${PUBLIC_BASE}${categoryPath(lang, primaryCategory.slug)}` }]
           : []),
         { '@type': 'ListItem', position: primaryCategory ? 4 : 3, name: article.title, item: canonical },
       ],
@@ -150,7 +246,7 @@ export function articlePage({ article, related, siteId }) {
     { name: t('breadcrumbHome', lang), href: '/' },
     { name: t('blog', lang), href: listingPath(lang) },
     ...(primaryCategory
-      ? [{ name: primaryCategory.name, href: categoryPath(lang, primaryCategory.slug) }]
+      ? [{ name: categoryName, href: categoryPath(lang, primaryCategory.slug) }]
       : []),
     { name: article.title, href: articlePath(article) },
   ]);
@@ -195,7 +291,7 @@ ${crumbs}
 <main id="main" class="wrap article-wrap">
   <article class="article">
     <header class="article-head">
-      ${primaryCategory ? `<a class="kicker" href="${categoryPath(lang, primaryCategory.slug)}">${e(primaryCategory.name)}</a>` : ''}
+      ${primaryCategory ? `<a class="kicker" href="${categoryPath(lang, primaryCategory.slug)}">${e(categoryName)}</a>` : ''}
       <h1>${e(article.title)}</h1>
       ${article.subtitle ? `<p class="lede">${e(article.subtitle)}</p>` : ''}
       <div class="article-meta">
@@ -214,6 +310,7 @@ ${crumbs}
       ${tocHtml}
     </div>
     ${shareLinks(article)}
+    ${commentSection({ article, lang, comments })}
     ${projectsHtml}
     ${relatedHtml}
     <section class="cta-panel">
@@ -234,6 +331,9 @@ ${footerHtml(lang)}`;
   return pageShell({
     lang,
     title: seoTitle,
+    // The dedicated social title is a separate WordPress field; pageShell()
+    // falls back to seoTitle when it is absent, empty or whitespace only.
+    ogTitle: article.seo && article.seo.ogTitle,
     description,
     canonical,
     alternates,
@@ -257,7 +357,7 @@ export function card(article, lang, { large = false } = {}) {
   }" data-title="${e(article.title.toLowerCase())}" data-search="${e(`${article.title} ${article.excerpt || ''}`.toLowerCase())}">
   <a class="post-card-media" href="${articlePath(article)}" tabindex="-1" aria-hidden="true">${coverImage(article)}</a>
   <div class="post-card-body">
-    ${primaryCategory ? `<a class="kicker" href="${categoryPath(article.lang, primaryCategory.slug)}">${e(primaryCategory.name)}</a>` : ''}
+    ${primaryCategory ? `<a class="kicker" href="${categoryPath(article.lang, primaryCategory.slug)}">${e(categoryLabel(primaryCategory.slug, primaryCategory.name, article.lang))}</a>` : ''}
     <h3><a href="${articlePath(article)}">${e(article.title)}</a></h3>
     <p>${e(article.excerpt || '')}</p>
     <div class="post-card-meta">
@@ -276,7 +376,10 @@ export function listingPage({ lang, articles, categories, activeCategory, siteId
   const [featured, ...rest] = sorted;
 
   const canonical = `${PUBLIC_BASE}${activeCategory ? categoryPath(lang, activeCategory) : listingPath(lang)}`;
-  const activeCategoryName = activeCategory ? (categories.find((c) => c.slug === activeCategory) || {}).name : null;
+  const activeCategoryEntry = activeCategory ? categories.find((c) => c.slug === activeCategory) : null;
+  const activeCategoryName = activeCategoryEntry
+    ? categoryLabel(activeCategory, activeCategoryEntry.name, lang)
+    : null;
 
   const pageTitle = titleOverride
     ? titleOverride
@@ -287,7 +390,8 @@ export function listingPage({ lang, articles, categories, activeCategory, siteId
     ? `${activeCategoryName}: ${t('blogSubtitle', lang)}`
     : t('blogSubtitle', lang);
 
-  const alternates = LANGS.map((code) => ({
+  const languages = getAvailableLangs();
+  const alternates = languages.map((code) => ({
     hreflang: code,
     href: `${PUBLIC_BASE}${activeCategory ? categoryPath(code, activeCategory) : listingPath(code)}`,
   }));
@@ -328,7 +432,7 @@ export function listingPage({ lang, articles, categories, activeCategory, siteId
     .concat(
       categories.map(
         (cat) =>
-          `<a class="chip${cat.slug === activeCategory ? ' is-active' : ''}" href="${categoryPath(lang, cat.slug)}">${e(cat.name)} <span class="chip-count">${cat.count}</span></a>`,
+          `<a class="chip${cat.slug === activeCategory ? ' is-active' : ''}" href="${categoryPath(lang, cat.slug)}">${e(categoryLabel(cat.slug, cat.name, lang))} <span class="chip-count">${cat.count}</span></a>`,
       ),
     )
     .join('');
@@ -370,7 +474,7 @@ export function listingPage({ lang, articles, categories, activeCategory, siteId
         <input type="search" id="blog-search" placeholder="${e(t('search', lang))}" autocomplete="off" />
       </label>
       <div class="lang-tabs" role="group" aria-label="${e(t('languageNotice', lang))}">
-        ${LANGS.map(
+        ${languages.map(
           (code) =>
             `<a href="${activeCategory ? categoryPath(code, activeCategory) : listingPath(code)}" hreflang="${code}" lang="${code}"${
               code === lang ? ' aria-current="true" class="is-active"' : ''

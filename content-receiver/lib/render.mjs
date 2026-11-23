@@ -170,6 +170,10 @@ export async function normalizeArticle(input, { publicDir, siteId: _siteId }) {
     .filter((tr) => asString(tr.lang, 5) !== lang)
     .map((tr) => ({ lang: asString(tr.lang, 5), slug: asString(tr.slug, 120), title: asString(tr.title, 300) }));
 
+  // The article's native WordPress comment setting decides whether the public
+  // page offers a comment form at all.
+  const commentsEnabled = !(payload.comments && payload.comments.enabled === false);
+
   const relatedProjects = (Array.isArray(payload.relatedProjects) ? payload.relatedProjects : [])
     .filter((p) => p && typeof p.url === 'string' && /^\/|^https:\/\/elomaiapp\.com\//.test(p.url))
     .slice(0, 4)
@@ -220,6 +224,7 @@ export async function normalizeArticle(input, { publicDir, siteId: _siteId }) {
     tags: (Array.isArray(payload.tags) ? payload.tags : []).map((tag) => asString(tag, 60)).filter(Boolean).slice(0, 12),
     seo,
     translations,
+    commentsEnabled,
     relatedProjects,
     readingMinutes: Number(payload.readingMinutes) || readingMinutes(html),
     wordCount: text.split(/\s+/).filter(Boolean).length,
@@ -333,7 +338,7 @@ ${urls.join('\n')}
  * Rebuilds every public artifact from the stored articles. Called after each
  * successful sync so the site never needs a database at request time.
  */
-export async function renderAll({ store, publicDir, siteId, staticLastmod }) {
+export async function renderAll({ store, comments, publicDir, siteId, staticLastmod }) {
   const stored = store.list().filter((a) => a.status === 'publish');
   // A translation link may only be published when the target is published too,
   // otherwise the hreflang graph and the language switcher would point at a 404.
@@ -377,7 +382,19 @@ export async function renderAll({ store, publicDir, siteId, staticLastmod }) {
 
   for (const article of articles) {
     const related = relatedFor(article, articles);
-    const html = articlePage({ article, related, siteId });
+    // Only approved comments are ever rendered into the static page.
+    const thread = comments ? comments.thread(article.uuid) : { roots: [], total: 0 };
+    const html = articlePage({
+      article,
+      related,
+      siteId,
+      comments: {
+        enabled: article.commentsEnabled !== false,
+        roots: thread.roots,
+        total: thread.total,
+        nextCursor: thread.nextCursor || '',
+      },
+    });
     await writeFile(path.join(blogDir, article.lang, article.slug, 'index.html'), html);
   }
 

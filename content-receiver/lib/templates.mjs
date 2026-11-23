@@ -22,6 +22,31 @@ export function e(value) {
 
 const label = (en, de, fr) => ({ en, de, fr });
 
+/** Last-resort title, identical to the value already published as og:site_name. */
+export const SITE_NAME = 'EL0M AI ENGINEER';
+
+/**
+ * Open Graph titles are their own field in WordPress (`og_title`): a shorter,
+ * social-specific headline that does not have to carry the brand suffix of the
+ * SEO title. Precedence is dedicated title → SEO title → site name.
+ *
+ * The chosen value is collapsed to a single line so that a stray newline, tab
+ * or NUL in the stored field can never break out of the content attribute, and
+ * whitespace-only input counts as absent. Everything else — including non-ASCII
+ * text — is preserved verbatim and escaped once, by e().
+ */
+export function ogTitleFor(ogTitle, seoTitle) {
+  for (const candidate of [ogTitle, seoTitle]) {
+    if (typeof candidate !== 'string') continue;
+    const clean = candidate
+      .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+      .replace(/ {2,}/g, ' ')
+      .trim();
+    if (clean) return clean;
+  }
+  return SITE_NAME;
+}
+
 /* ------------------------------------------------------------ social card */
 
 /**
@@ -154,12 +179,93 @@ export const strings = {
   privacy: label('Privacy & analytics', 'Datenschutz & Analyse', 'Confidentialité & analyse'),
   languageNotice: label('Language', 'Sprache', 'Langue'),
   readingTime: label('Reading time', 'Lesezeit', 'Temps de lecture'),
+
+  /* ---- comments: every string is localised for DE, EN and FR ---- */
+  comments: label('Comments', 'Kommentare', 'Commentaires'),
+  commentCountOne: label('1 comment', '1 Kommentar', '1 commentaire'),
+  commentCountMany: label('{n} comments', '{n} Kommentare', '{n} commentaires'),
+  commentsIntro: label(
+    'Comments are moderated. Only approved comments are shown, and your email address is never published.',
+    'Kommentare werden moderiert. Es werden nur freigegebene Kommentare angezeigt, und Ihre E-Mail-Adresse wird niemals veröffentlicht.',
+    'Les commentaires sont modérés. Seuls les commentaires approuvés sont affichés et votre adresse e-mail n’est jamais publiée.',
+  ),
+  commentsEmpty: label(
+    'No comments yet. Be the first to write one.',
+    'Noch keine Kommentare. Schreiben Sie den ersten.',
+    'Aucun commentaire pour l’instant. Soyez le premier à en écrire un.',
+  ),
+  commentsClosed: label(
+    'Comments are closed for this article.',
+    'Die Kommentarfunktion ist für diesen Artikel geschlossen.',
+    'Les commentaires sont fermés pour cet article.',
+  ),
+  commentFormTitle: label('Write a comment', 'Kommentar schreiben', 'Écrire un commentaire'),
+  commentName: label('Display name', 'Anzeigename', 'Nom affiché'),
+  commentEmail: label('Email address', 'E-Mail-Adresse', 'Adresse e-mail'),
+  commentEmailHint: label(
+    'Not published. Used only to contact you about this comment.',
+    'Wird nicht veröffentlicht. Wird nur für Rückfragen zu diesem Kommentar verwendet.',
+    'Non publiée. Utilisée uniquement pour vous contacter au sujet de ce commentaire.',
+  ),
+  commentContent: label('Comment', 'Kommentar', 'Commentaire'),
+  commentPrivacy: label(
+    'I agree that my name, email address and comment are stored so that the comment can be published and moderated.',
+    'Ich stimme zu, dass mein Name, meine E-Mail-Adresse und mein Kommentar gespeichert werden, damit der Kommentar veröffentlicht und moderiert werden kann.',
+    'J’accepte que mon nom, mon adresse e-mail et mon commentaire soient enregistrés afin de publier et de modérer le commentaire.',
+  ),
+  commentPrivacyLink: label('Privacy notice', 'Datenschutzhinweis', 'Mentions de confidentialité'),
+  commentSubmit: label('Post comment', 'Kommentar absenden', 'Publier le commentaire'),
+  commentSending: label('Sending…', 'Wird gesendet…', 'Envoi…'),
+  commentReceived: label(
+    'Thank you. Your comment was received and will appear here once it has been reviewed.',
+    'Danke. Ihr Kommentar ist eingegangen und erscheint hier, sobald er geprüft wurde.',
+    'Merci. Votre commentaire a été reçu et apparaîtra ici dès qu’il aura été vérifié.',
+  ),
+  commentError: label(
+    'Your comment could not be sent. Please try again later.',
+    'Ihr Kommentar konnte nicht gesendet werden. Bitte versuchen Sie es später erneut.',
+    'Votre commentaire n’a pas pu être envoyé. Veuillez réessayer plus tard.',
+  ),
+  commentRateLimited: label(
+    'You have submitted several comments recently. Please try again later.',
+    'Sie haben in letzter Zeit mehrere Kommentare gesendet. Bitte versuchen Sie es später erneut.',
+    'Vous avez envoyé plusieurs commentaires récemment. Veuillez réessayer plus tard.',
+  ),
+  commentReply: label('Reply', 'Antworten', 'Répondre'),
+  commentReplyingTo: label('Replying to {name}', 'Antwort an {name}', 'Réponse à {name}'),
+  commentCancelReply: label('Cancel', 'Abbrechen', 'Annuler'),
+  commentLoadMore: label('Load more comments', 'Weitere Kommentare laden', 'Charger plus de commentaires'),
+  commentRequired: label(
+    'Please check the required fields.',
+    'Bitte prüfen Sie die Pflichtfelder.',
+    'Veuillez vérifier les champs obligatoires.',
+  ),
 };
 
 export function t(key, lang) {
   const entry = strings[key];
   if (!entry) return key;
   return entry[lang] || entry.en;
+}
+
+export function commentCountLabel(count, lang) {
+  const total = Number(count) || 0;
+  const key = total === 1 ? 'commentCountOne' : 'commentCountMany';
+  return t(key, lang).replace('{n}', String(total));
+}
+
+/** Date and time, always in UTC so every reader sees the same timestamp. */
+export function formatDateTime(iso, lang) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat(INTL_LOCALE[lang] || 'en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'UTC',
+  }).format(date);
 }
 
 export function formatDate(iso, lang) {
@@ -208,6 +314,48 @@ let availableLangs = LANGS.slice();
 export function setAvailableLangs(langs) {
   const filtered = LANGS.filter((code) => (langs || []).includes(code));
   availableLangs = filtered.length ? filtered : ['en'];
+}
+
+/** The languages with published content, as set by the last render. */
+export function getAvailableLangs() {
+  return availableLangs.slice();
+}
+
+/**
+ * Category labels are editorial data from WordPress, but the taxonomy is shared
+ * across languages: a category route is /blog/<lang>/category/<slug>/, so the
+ * slug must stay identical while the visible label follows the page language.
+ * Only terms that appear on published or in-review articles need an entry; any
+ * other term falls back to the name WordPress sends.
+ */
+const CATEGORY_LABELS = {
+  'cybersecurity-monitoring': {
+    en: 'Cybersecurity & Monitoring',
+    de: 'Cybersicherheit & Monitoring',
+    fr: 'Cybersécurité et supervision',
+  },
+  'security-automation': {
+    en: 'Security Automation',
+    de: 'Sicherheitsautomatisierung',
+    fr: 'Automatisation de la sécurité',
+  },
+  'devops-cloud-infrastructure': {
+    en: 'DevOps & Cloud Infrastructure',
+    de: 'DevOps & Cloud-Infrastruktur',
+    fr: 'DevOps et infrastructure cloud',
+  },
+  'email-security': {
+    en: 'Email security',
+    de: 'E-Mail-Sicherheit',
+    fr: 'Sécurité des e-mails',
+  },
+};
+
+export function categoryLabel(slug, fallback, lang) {
+  const entry = CATEGORY_LABELS[String(slug || '').toLowerCase()];
+  if (entry && entry[lang]) return entry[lang];
+  const name = typeof fallback === 'string' ? fallback.trim() : '';
+  return name || String(slug || '');
 }
 
 export function headerHtml(lang, activePath) {
@@ -306,6 +454,7 @@ export function analyticsHtml({ siteId, canonical, eventLabel, eventAction }) {
 export function pageShell({
   lang,
   title,
+  ogTitle,
   description,
   canonical,
   alternates,
@@ -327,6 +476,7 @@ export function pageShell({
     .join('\n    ');
 
   const og = resolveOgImage(ogImage, title);
+  const socialTitle = ogTitleFor(ogTitle, title);
   const dimensions = og.width > 0 && og.height > 0
     ? `\n    <meta property="og:image:width" content="${og.width}" />\n    <meta property="og:image:height" content="${og.height}" />`
     : '';
@@ -347,12 +497,12 @@ export function pageShell({
     <meta property="og:site_name" content="EL0M AI ENGINEER" />
     <meta property="og:locale" content="${OG_LOCALE[lang] || 'en_US'}" />
     <meta property="og:url" content="${e(canonical)}" />
-    <meta property="og:title" content="${e(title)}" />
+    <meta property="og:title" content="${e(socialTitle)}" />
     <meta property="og:description" content="${e(description)}" />
     <meta property="og:image" content="${e(og.url)}" />${dimensions}${imageType}
     <meta property="og:image:alt" content="${e(og.alt || title)}" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="${e(title)}" />
+    <meta name="twitter:title" content="${e(socialTitle)}" />
     <meta name="twitter:description" content="${e(description)}" />
     <meta name="twitter:image" content="${e(og.url)}" />
     <meta name="twitter:image:alt" content="${e(og.alt || title)}" />

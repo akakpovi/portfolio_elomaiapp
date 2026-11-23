@@ -10,9 +10,12 @@
   "scripts": {
     "start": "node server.mjs",
     "selftest": "node test/selftest.mjs",
-    "test:og": "node test/og-meta-test.mjs"
+    "test:og": "node test/og-meta-test.mjs",
+    "test:og:title": "node test/og-title-test.mjs",
+    "test:seo": "node test/seo-social-test.mjs",
+    "test:comments": "node test/comments-test.mjs"
   },
   "dependencies": {
-    "sanitize-html": "2.14.0"
+    "sanitize-html": "2.18.2"
   }
 }
