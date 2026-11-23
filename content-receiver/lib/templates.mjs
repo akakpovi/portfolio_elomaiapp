@@ -322,6 +322,21 @@ export function getAvailableLangs() {
 }
 
 /**
+ * Content hash of the blog assets, appended to their URLs. The asset names are
+ * not fingerprinted, so without this a CDN in front of the site can keep serving
+ * an old blog.js (or a cached 404) after a deploy. Set once per render.
+ */
+let assetVersion = '';
+
+export function setAssetVersion(version) {
+  assetVersion = String(version || '').replace(/[^a-z0-9]/gi, '').slice(0, 12);
+}
+
+export function getAssetVersion() {
+  return assetVersion;
+}
+
+/**
  * Category labels are editorial data from WordPress, but the taxonomy is shared
  * across languages: a category route is /blog/<lang>/category/<slug>/, so the
  * slug must stay identical while the visible label follows the page language.
@@ -477,6 +492,7 @@ export function pageShell({
 
   const og = resolveOgImage(ogImage, title);
   const socialTitle = ogTitleFor(ogTitle, title);
+  const assetQuery = assetVersion ? `?v=${assetVersion}` : '';
   const dimensions = og.width > 0 && og.height > 0
     ? `\n    <meta property="og:image:width" content="${og.width}" />\n    <meta property="og:image:height" content="${og.height}" />`
     : '';
@@ -511,13 +527,13 @@ export function pageShell({
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" />
-    <link rel="stylesheet" href="/blog/assets/blog.css" />
+    <link rel="stylesheet" href="/blog/assets/blog.css${assetQuery}" />
     ${jsonLdBlocks}
     ${analyticsHtml({ siteId, canonical, eventAction: analyticsAction, eventLabel: analyticsLabel })}
 </head>
 <body class="${bodyClass || ''}">
 ${content}
-<script src="/blog/assets/blog.js" defer></script>
+<script src="/blog/assets/blog.js${assetQuery}" defer></script>
 </body>
 </html>`;
 }

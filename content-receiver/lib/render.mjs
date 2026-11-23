@@ -5,7 +5,17 @@ import crypto from 'node:crypto';
 import { sanitizeArticleHtml, buildTableOfContents, htmlToText, readingMinutes } from './sanitize.mjs';
 import { storeImage, rewriteMediaReferences, MAX_MEDIA_BYTES_TOTAL } from './media.mjs';
 import { articlePage, listingPage, card } from './pages.mjs';
-import { PUBLIC_BASE, LANGS, listingPath, categoryPath, setAvailableLangs, t } from './templates.mjs';
+import { createHash } from 'node:crypto';
+
+import {
+  PUBLIC_BASE,
+  LANGS,
+  listingPath,
+  categoryPath,
+  setAvailableLangs,
+  setAssetVersion,
+  t,
+} from './templates.mjs';
 
 /* ----------------------------------------------------------- validation */
 
@@ -359,6 +369,10 @@ export async function renderAll({ store, comments, publicDir, siteId, staticLast
   const js = await fs.readFile(new URL('../assets/blog.js', import.meta.url), 'utf8');
   await writeFile(path.join(blogDir, 'assets', 'blog.css'), css);
   await writeFile(path.join(blogDir, 'assets', 'blog.js'), js);
+
+  // Asset URLs carry their own content hash so a CDN in front of the site can
+  // never keep serving an old blog.js — or an old cached 404 for it.
+  setAssetVersion(createHash('sha256').update(css).update(js).digest('hex').slice(0, 10));
 
   // A language with no published article gets no hub at all: empty language
   // pages are neither linked nor indexed. The default language lives at

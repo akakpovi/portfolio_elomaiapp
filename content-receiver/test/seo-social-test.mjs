@@ -30,6 +30,8 @@ import {
   pageShell,
   setAvailableLangs,
   getAvailableLangs,
+  setAssetVersion,
+  getAssetVersion,
   categoryLabel,
   PUBLIC_BASE,
   SITE_NAME,
@@ -290,6 +292,30 @@ check('categoryLabel keeps a usable fallback and never throws', () => {
   assert.equal(categoryLabel('nope', 'Custom term', 'de'), 'Custom term');
   assert.equal(categoryLabel('nope', '', 'de'), 'nope');
   assert.equal(categoryLabel(undefined, undefined, 'en'), '');
+});
+
+/* ------------------------------------------------------- asset versioning */
+
+check('blog assets carry a content version, so a CDN cannot serve a stale one', () => {
+  setAssetVersion('abc123def456');
+  const html = shell();
+  assert.ok(html.includes('href="/blog/assets/blog.css?v=abc123def456"'));
+  assert.ok(html.includes('src="/blog/assets/blog.js?v=abc123def456"'));
+  assert.equal(getAssetVersion(), 'abc123def456');
+});
+
+check('the version is sanitised to a hash-shaped token', () => {
+  setAssetVersion('<script>alert(1)</script>');
+  assert.equal(getAssetVersion(), 'scriptalert1');
+  assert.ok(!shell().includes('<script>alert'));
+  setAssetVersion('');
+});
+
+check('without a version the asset URLs stay plain', () => {
+  setAssetVersion('');
+  const html = shell();
+  assert.ok(html.includes('href="/blog/assets/blog.css"'));
+  assert.ok(html.includes('src="/blog/assets/blog.js"'));
 });
 
 /* ------------------------------------------------------------------ report */
