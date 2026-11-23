@@ -1,0 +1,18 @@
+# vps-disk-watch.timer — runs the read-only measurement every 15 minutes.
+#
+# Disable with:
+#   systemctl disable --now vps-disk-watch.timer
+# Verify with:
+#   systemctl list-timers vps-disk-watch.timer
+#   /usr/local/bin/vps-disk-watch.sh --status
+[Unit]
+Description=VPS disk watch every 15 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+AccuracySec=30s
+Unit=vps-disk-watch.service
+
+[Install]
+WantedBy=timers.target

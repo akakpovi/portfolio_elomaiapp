@@ -1,0 +1,25 @@
+# vps-disk-watch.service — one read-only measurement of the production host.
+#
+# Type=oneshot and no restart policy: the script writes one JSON line and alerts
+# through journald if a threshold is crossed. Nothing stays resident between runs.
+#
+# Install:
+#   install -m 0755 ops/vps-disk-watch.sh /usr/local/bin/vps-disk-watch.sh
+#   install -m 0644 ops/systemd/vps-disk-watch.{service,timer} /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now vps-disk-watch.timer
+[Unit]
+Description=VPS disk, inode and container-health watch (read-only)
+Documentation=file:///usr/local/bin/vps-disk-watch.sh
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/vps-disk-watch.sh
+Nice=10
+IOSchedulingClass=idle
+# No network, no credentials: the measurement is all local.
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+NoNewPrivileges=true
