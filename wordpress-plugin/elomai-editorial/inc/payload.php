@@ -660,6 +660,9 @@ function elomai_build_payload($post_id, $preview = false) {
         'relatedProjects' => array_slice($related_projects, 0, 4),
         'readingMinutes' => elomai_reading_minutes($html),
         'seo' => $seo,
+        // Native WordPress discussion setting decides whether the public
+        // article offers a comment form. No extra option, no divergence.
+        'comments' => ['enabled' => $post->comment_status === 'open'],
     ];
 
     // The receiver signs the body; this hash identifies the *content* version.
@@ -672,6 +675,7 @@ function elomai_build_payload($post_id, $preview = false) {
         $article['featured'],
         $article['categories'],
         $article['translations'],
+        $article['comments'],
         $article['publishedAt'],
         $article['modifiedAt'],
     ]));

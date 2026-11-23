@@ -273,6 +273,7 @@ function elomai_activate() {
     }
     $settings += [
         'endpoint' => ELOMAI_PUBLIC_BASE . '/content-api/v1/sync',
+        'comments_endpoint' => ELOMAI_PUBLIC_BASE . '/content-api/comments/v1/wp',
         'allow_insecure_local' => false,
         'matomo_url' => ELOMAI_PUBLIC_BASE . '/matomo/',
         'matomo_site_id' => '1',
@@ -288,6 +289,9 @@ function elomai_activate() {
     if (!wp_next_scheduled('elomai_retry_queue')) {
         wp_schedule_event(time() + 300, 'hourly', 'elomai_retry_queue');
     }
+    if (!wp_next_scheduled(ELOMAI_COMMENTS_CRON)) {
+        wp_schedule_event(time() + 120, 'elomai_five_minutes', ELOMAI_COMMENTS_CRON);
+    }
     if (!wp_next_scheduled('elomai_analytics_refresh')) {
         wp_schedule_event(time() + 600, 'elomai_six_hours', 'elomai_analytics_refresh');
     }
@@ -298,6 +302,8 @@ register_activation_hook(__FILE__, 'elomai_activate');
 register_deactivation_hook(__FILE__, function () {
     wp_clear_scheduled_hook('elomai_retry_queue');
     wp_clear_scheduled_hook('elomai_analytics_refresh');
+    wp_clear_scheduled_hook(ELOMAI_COMMENTS_CRON);
+    wp_clear_scheduled_hook(ELOMAI_COMMENTS_FLUSH);
 });
 
 add_filter('cron_schedules', function ($schedules) {
@@ -343,6 +349,7 @@ add_action('init', function () {
 require_once ELOMAI_DIR . 'inc/article.php';
 require_once ELOMAI_DIR . 'inc/payload.php';
 require_once ELOMAI_DIR . 'inc/sync.php';
+require_once ELOMAI_DIR . 'inc/comments.php';
 require_once ELOMAI_DIR . 'inc/dashboard.php';
 require_once ELOMAI_DIR . 'inc/social.php';
 require_once ELOMAI_DIR . 'inc/analytics.php';

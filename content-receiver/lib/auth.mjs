@@ -15,6 +15,19 @@ import crypto from 'node:crypto';
 
 const MAX_SKEW_SECONDS = 300;
 
+/**
+ * The comment channel uses the same HMAC convention as the article channel
+ * but never the same usable key: both sides derive a scope key from the one
+ * configured secret, so a captured comment signature cannot be replayed
+ * against article publishing and vice versa.
+ */
+export const COMMENT_SCOPE = 'elomai:comments:v1';
+
+export function scopedSecret(master, scope) {
+  if (!master) return '';
+  return crypto.createHmac('sha256', String(master)).update(String(scope)).digest('hex');
+}
+
 export function secretFromEnv(env = process.env) {
   const direct = (env.ELOMAI_SYNC_SECRET || '').trim();
   if (direct) return direct;
@@ -40,7 +53,12 @@ function safeEqualHex(a, b) {
   return crypto.timingSafeEqual(left, right);
 }
 
-export function verifyRequest({ headers, rawBody, secret, now = Date.now() }) {
+export function verifyRequest({ headers, rawBody, secret, scope = '', now = Date.now() }) {
+  const effective = scope ? scopedSecret(secret, scope) : secret;
+  return verifySigned({ headers, rawBody, secret: effective, now });
+}
+
+function verifySigned({ headers, rawBody, secret, now = Date.now() }) {
   if (!secret || secret.length < 32) {
     return { ok: false, status: 503, error: 'receiver_secret_not_configured' };
   }

@@ -41,11 +41,26 @@ function elomai_endpoint_is_acceptable($endpoint) {
  * @return array{ok: bool, http: int, body: array, error: string}
  */
 function elomai_send($payload) {
-    $endpoint = elomai_endpoint();
+    return elomai_send_to(elomai_endpoint(), $payload);
+}
+
+/**
+ * Same transport, signing and endpoint rules for any receiver channel.
+ *
+ * A non-empty `$scope` derives a channel-specific key from the one configured
+ * secret (HMAC-SHA256 with the scope as message), so the comment channel and
+ * the article channel never share a usable credential.
+ *
+ * @return array{ok: bool, http: int, body: array, error: string}
+ */
+function elomai_send_to($endpoint, $payload, $scope = '') {
     $secret = elomai_sync_secret();
 
     if ($secret === '') {
         return ['ok' => false, 'http' => 0, 'body' => [], 'error' => 'Kein Sync-Geheimnis konfiguriert.'];
+    }
+    if ($scope !== '') {
+        $secret = hash_hmac('sha256', (string) $scope, $secret);
     }
     if (!elomai_endpoint_is_acceptable($endpoint)) {
         return ['ok' => false, 'http' => 0, 'body' => [], 'error' => 'Endpunkt abgelehnt (HTTPS erforderlich): ' . $endpoint];

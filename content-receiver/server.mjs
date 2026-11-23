@@ -4,9 +4,12 @@ import path from 'node:path';
 
 import { verifyRequest, secretFromEnv, createRateLimiter } from './lib/auth.mjs';
 import { createStore } from './lib/store.mjs';
+import { createCommentStore, classifyComment } from './lib/comments.mjs';
+import { createCommentApi } from './lib/comment-api.mjs';
 import { normalizeArticle, renderAll, ValidationError } from './lib/render.mjs';
 
 const PORT = Number(process.env.PORT || 8080);
+const HOST = process.env.HOST || '0.0.0.0';
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const PUBLIC_DIR = path.join(DATA_DIR, 'public');
 const SITE_ID = process.env.MATOMO_SITE_ID || '1';
@@ -15,6 +18,15 @@ const MAX_BODY_BYTES = 30 * 1024 * 1024;
 
 const secret = secretFromEnv();
 const store = createStore(DATA_DIR);
+// A deliberately broken classifier is available for the fail-safe test: a
+// comment that cannot be classified must stay pending, never be published.
+const classifier =
+  process.env.ELOMAI_COMMENT_CLASSIFIER === 'broken'
+    ? () => {
+        throw new Error('classifier_unavailable');
+      }
+    : classifyComment;
+const comments = createCommentStore(DATA_DIR, { secret, classifier });
 const allow = createRateLimiter({ max: 120 });
 let ready = false;
 let lastRender = null;
@@ -50,6 +62,17 @@ function readBody(req) {
 function clientKey(req) {
   const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
   return forwarded || req.socket.remoteAddress || 'unknown';
+}
+
+async function rerender() {
+  lastRender = await renderAll({
+    store,
+    comments,
+    publicDir: PUBLIC_DIR,
+    siteId: SITE_ID,
+    staticLastmod: STATIC_LASTMOD,
+  });
+  return lastRender;
 }
 
 async function handleUpsert(req, res, rawBody) {
@@ -91,7 +114,7 @@ async function handleUpsert(req, res, rawBody) {
       syncedAt: new Date().toISOString(),
     };
     await store.saveArticle(unpublished, idempotencyKey, { operation: 'unpublish' });
-    lastRender = await renderAll({ store, publicDir: PUBLIC_DIR, siteId: SITE_ID, staticLastmod: STATIC_LASTMOD });
+    lastRender = await rerender();
     return json(res, 200, {
       ok: true,
       uuid,
@@ -113,7 +136,7 @@ async function handleUpsert(req, res, rawBody) {
   }
 
   await store.saveArticle(article, idempotencyKey, { operation: 'upsert' });
-  lastRender = await renderAll({ store, publicDir: PUBLIC_DIR, siteId: SITE_ID, staticLastmod: STATIC_LASTMOD });
+  lastRender = await rerender();
 
   return json(res, 200, {
     ok: true,
@@ -129,6 +152,13 @@ async function handleUpsert(req, res, rawBody) {
   });
 }
 
+const commentApi = createCommentApi({
+  comments,
+  store,
+  rerender,
+  secret,
+});
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://receiver');
   const route = url.pathname.replace(/\/+$/, '') || '/';
@@ -143,7 +173,17 @@ const server = http.createServer(async (req, res) => {
       lastRender: lastRender ? lastRender.generatedAt : null,
       secretConfigured: Boolean(secret),
       uptimeSeconds: Math.round(process.uptime()),
+      // Operational counters only: no comment content, names or addresses.
+      comments: comments.stats(),
     });
+  }
+
+  // Public comment API and the signed WordPress comment channel.
+  try {
+    if (await commentApi.handle(req, res, url)) return;
+  } catch (err) {
+    console.error('[comments-error]', err && err.message ? err.message : 'unknown');
+    return json(res, 500, { ok: false, error: 'internal_error' });
   }
 
   if (route !== '/v1/sync') {
@@ -182,15 +222,26 @@ const server = http.createServer(async (req, res) => {
 
 async function bootstrap() {
   await store.init();
+  await comments.init();
   await fs.mkdir(PUBLIC_DIR, { recursive: true });
-  lastRender = await renderAll({ store, publicDir: PUBLIC_DIR, siteId: SITE_ID, staticLastmod: STATIC_LASTMOD });
+  // Retention runs at startup and after every moderation change.
+  const pruned = await comments.prune({});
+  lastRender = await renderAll({
+    store,
+    comments,
+    publicDir: PUBLIC_DIR,
+    siteId: SITE_ID,
+    staticLastmod: STATIC_LASTMOD,
+  });
   ready = true;
-  console.log(`[receiver] ready articles=${lastRender.articles} data=${DATA_DIR} secret=${secret ? 'set' : 'MISSING'}`);
+  console.log(
+    `[receiver] ready articles=${lastRender.articles} comments=${comments.count()} pruned=${pruned.removed} data=${DATA_DIR} secret=${secret ? 'set' : 'MISSING'}`,
+  );
 }
 
 bootstrap()
   .then(() => {
-    server.listen(PORT, '0.0.0.0', () => console.log(`[receiver] listening on :${PORT}`));
+    server.listen(PORT, HOST, () => console.log(`[receiver] listening on ${HOST}:${PORT}`));
   })
   .catch((err) => {
     console.error('[receiver] bootstrap failed:', err && err.message);
