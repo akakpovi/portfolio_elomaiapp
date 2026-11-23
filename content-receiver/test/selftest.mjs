@@ -81,6 +81,9 @@ function articlePayload({ uuid, lang, slug, title, version = 1, translations = [
         alt: 'Test cover',
         caption: 'Test caption',
         variants: [{ ref: pngRef, width: 800 }],
+        // A dedicated social card whose true size is the fixture PNG's 1×1.
+        // If the template ever invents 1200×630 again, these assertions fail.
+        og: { ref: pngRef, width: 1, height: 1, mime: 'image/png' },
       },
       author: { name: 'Elom Akakpovi' },
       publishedAt: '2026-11-01T09:00:00Z',
@@ -149,6 +152,17 @@ try {
   check('blogposting json-ld present', articleHtml.includes('"@type":"BlogPosting"'));
   check('breadcrumbs json-ld present', articleHtml.includes('"@type":"BreadcrumbList"'));
   check('canonical points at article', articleHtml.includes('<link rel="canonical" href="https://elomaiapp.com/blog/en/receiver-self-test/"'));
+  check('og:image points at the exported card', /property="og:image" content="https:\/\/elomaiapp\.com\/media\/[a-f0-9]{64}\.png"/.test(articleHtml));
+  check(
+    'og dimensions describe the actual card (1×1 fixture)',
+    articleHtml.includes('<meta property="og:image:width" content="1" />') && articleHtml.includes('<meta property="og:image:height" content="1" />'),
+    (articleHtml.match(/og:image:(?:width|height)" content="[^"]*"/g) || []).join(' | '),
+  );
+  check('og:image:type emitted', articleHtml.includes('<meta property="og:image:type" content="image/png" />'));
+  check('og:image:alt emitted', /<meta property="og:image:alt" content="Test cover"/.test(articleHtml));
+  check('exactly one og:image tag', articleHtml.split('property="og:image"').length - 1 === 1);
+  check('twitter:image equals og:image', (articleHtml.match(/name="twitter:image" content="([^"]*)"/) || [])[1] === (articleHtml.match(/property="og:image" content="([^"]*)"/) || [])[1]);
+  check('cover keeps its own 16:9 attributes', /<img class="cover[^"]*" src="\/media\/[a-f0-9]{64}\.png"[^>]*width="1200" height="630"/.test(articleHtml));
   check('tracker configured first-party', articleHtml.includes('/matomo/matomo.php'));
 
   const listing = await read('blog/index.html');
@@ -181,6 +195,7 @@ try {
   check('german translation published', de.status === 200, `status=${de.status}`);
   const deHtml = await read('blog/de/receiver-selbsttest/index.html');
   check('hreflang alternate to english', deHtml.includes('hreflang="en" href="https://elomaiapp.com/blog/en/receiver-self-test/"'));
+  check('german page emits the same card metadata shape', /og:image:width" content="1"/.test(deHtml) && deHtml.includes('og:image:type" content="image/png"'));
   check('german listing has article', (await read('blog/de/index.html')).includes('/blog/de/receiver-selbsttest/'));
   // A language without a published article must not get a hub page, and the
   // sitemap must not advertise one.

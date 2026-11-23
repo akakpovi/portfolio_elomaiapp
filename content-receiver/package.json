@@ -9,7 +9,8 @@
   },
   "scripts": {
     "start": "node server.mjs",
-    "selftest": "node test/selftest.mjs"
+    "selftest": "node test/selftest.mjs",
+    "test:og": "node test/og-meta-test.mjs"
   },
   "dependencies": {
     "sanitize-html": "2.14.0"

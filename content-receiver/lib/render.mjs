@@ -129,6 +129,25 @@ export async function normalizeArticle(input, { publicDir, siteId: _siteId }) {
         .map((v) => ({ src: `/media/${asString(v.ref, 80).toLowerCase()}`, width: Number(v.width) || 0 }))
         .filter((v) => v.width > 0)
         .sort((a, b) => a.width - b.width);
+      // Dedicated 1200×630 social card, when WordPress exported one. Only the
+      // ref is trusted from the payload; the dimensions come back with it and
+      // are re-checked here against the media that actually got stored.
+      let og = null;
+      const ogInput = featuredInput.og && typeof featuredInput.og === 'object' ? featuredInput.og : null;
+      if (ogInput && typeof ogInput.ref === 'string') {
+        const ogRef = asString(ogInput.ref, 80).toLowerCase();
+        const ogWidth = Math.trunc(Number(ogInput.width) || 0);
+        const ogHeight = Math.trunc(Number(ogInput.height) || 0);
+        if (available.has(ogRef) && ogWidth > 0 && ogHeight > 0) {
+          og = {
+            src: `/media/${ogRef}`,
+            width: ogWidth,
+            height: ogHeight,
+            type: asString(ogInput.mime, 40).toLowerCase(),
+          };
+        }
+      }
+
       featured = {
         src: `/media/${ref}`,
         srcset: variants,
@@ -136,6 +155,7 @@ export async function normalizeArticle(input, { publicDir, siteId: _siteId }) {
         height: Number(featuredInput.height) || 900,
         alt: asString(featuredInput.alt, 300),
         caption: asString(featuredInput.caption, 400),
+        og,
       };
     }
   }
@@ -169,7 +189,7 @@ export async function normalizeArticle(input, { publicDir, siteId: _siteId }) {
       : [],
     ogTitle: asString(seoInput.ogTitle, 200) || asString(seoInput.title, 200) || title,
     ogDescription: asString(seoInput.ogDescription, 300) || seoDescription,
-    ogImage: featured ? featured.src : `${PUBLIC_BASE}/og-image.png`,
+    ogImage: featured ? (featured.og ? featured.og.src : featured.src) : `${PUBLIC_BASE}/og-image.png`,
   };
 
   const checksum = crypto

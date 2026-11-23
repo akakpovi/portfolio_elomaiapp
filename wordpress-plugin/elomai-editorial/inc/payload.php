@@ -12,9 +12,9 @@ function elomai_project_map() {
     return [
         'aka-ia' => ['AKA IA', '/#project-aka-ia', 'Multi-model AI chat platform with local model routing.'],
         'presence' => ['Presence', '/#project-presence', 'Website monitoring SaaS built with Django and Celery.'],
-        'afro-haar-app' => ['Afro-Haar-App', '/#project-afro-haar-app', 'Booking and marketplace app for Afro hair care.'],
+        'afro-haar-app' => ['Afro-Haar-App', '/#project-afro-haar', 'Booking and marketplace app for Afro hair care.'],
         'ecovision' => ['EcoVision', '/#project-ecovision', 'Computer-vision system for waste classification.'],
-        'infrastructure-as-code' => ['Infrastructure as Code', '/#project-iac', 'Reproducible VPS infrastructure with OpenTofu.'],
+        'infrastructure-as-code' => ['Infrastructure as Code', '/#project-infrastructure-as-code', 'Reproducible VPS infrastructure with OpenTofu.'],
     ];
 }
 
@@ -117,6 +117,78 @@ function elomai_export_attachment($attachment_id, &$media) {
     ];
 }
 
+/**
+ * Exports a dedicated social card: exactly 1200×630, centre-cropped.
+ *
+ * The article's responsive cover stays 16:9; only the Open Graph image gets the
+ * 40:21 card ratio, so og:image:width/height always describe a real file while
+ * the browser keeps the high-resolution variant it needs.
+ *
+ * @return array{ref: string, width: int, height: int, mime: string}|null
+ */
+function elomai_export_og_image($attachment_id, &$media) {
+    $attachment_id = (int) $attachment_id;
+    if ($attachment_id < 1) {
+        return null;
+    }
+    $file = get_attached_file($attachment_id);
+    if (!$file || !file_exists($file)) {
+        return null;
+    }
+    if (filesize($file) > 12 * 1024 * 1024) {
+        return null;
+    }
+
+    $editor = wp_get_image_editor($file);
+    if (is_wp_error($editor)) {
+        return null;
+    }
+    $size = $editor->get_size();
+    if (empty($size['width']) || empty($size['height'])) {
+        return null;
+    }
+
+    // Social crawlers are still the most conservative consumers, so JPEG.
+    $mime = wp_image_editor_supports(['mime_type' => 'image/jpeg']) ? 'image/jpeg' : 'image/png';
+
+    // resize(1200, 630, true) scales to cover and centre-crops: no stretching.
+    $editor->resize(1200, 630, true);
+    if (method_exists($editor, 'set_quality')) {
+        $editor->set_quality(82);
+    }
+
+    $tmp = wp_tempnam('elomai-og');
+    $saved = $editor->save($tmp, $mime);
+    if (is_wp_error($saved) || empty($saved['path']) || !file_exists($saved['path'])) {
+        if (file_exists($tmp)) {
+            @unlink($tmp);
+        }
+        return null;
+    }
+    $bytes = file_get_contents($saved['path']);
+    @unlink($saved['path']);
+    if (!$bytes) {
+        return null;
+    }
+
+    $encoded = elomai_media_ref($bytes, $saved['mime'] ?? $mime);
+    $dimensions = @getimagesizefromstring($bytes);
+    if (!$dimensions) {
+        return null;
+    }
+    $media[$encoded['ref']] = ['ref' => $encoded['ref'], 'dataBase64' => $encoded['dataBase64']];
+
+    // Report the dimensions of the file that was actually written, never the
+    // requested ones: a source too small to crop up to 1200×630 must not be
+    // advertised as 1200×630.
+    return [
+        'ref' => $encoded['ref'],
+        'width' => (int) $dimensions[0],
+        'height' => (int) $dimensions[1],
+        'mime' => $encoded['mime'],
+    ];
+}
+
 /** Rewrites <img> tags to exported media references. */
 function elomai_rewrite_images($html, &$media, &$warnings) {
     return preg_replace_callback('/<img\b[^>]*>/i', function ($match) use (&$media, &$warnings) {
@@ -166,38 +238,200 @@ function elomai_rewrite_images($html, &$media, &$warnings) {
     }, $html);
 }
 
-/** Internal WordPress links become public portfolio links, or lose their link. */
+/**
+ * Routes the public site actually serves.
+ *
+ * The site is a static Vite build plus the pre-rendered blog, so any path that
+ * is neither listed here nor covered by a prefix is a 404 for the reader. The
+ * allowlist exists because site-relative links used to pass through unchanged:
+ * a call-to-action pointing at a page that was never built reached the payload
+ * without producing a single warning.
+ *
+ * @return array{exact: string[], prefixes: string[]}
+ */
+function elomai_public_routes() {
+    $routes = apply_filters('elomai_public_routes', [
+        'exact' => [
+            '/',
+            '/#solutions',
+            '/#services',
+            '/#projects',
+            '/#technologies',
+            '/#about',
+            '/#freelancer',
+            '/#contact',
+            '/#project-aka-ia',
+            '/#project-afro-haar',
+            '/#project-presence',
+            '/#project-ecovision',
+            '/#project-thermal-yolo',
+            '/#project-infrastructure-as-code',
+            '/#project-local-ai-operator',
+            '/#project-private-ai-platform',
+            '/#project-ai-security-assistant',
+            '/#project-metaclean',
+        ],
+        // Generated or served by the receiver/nginx, so the exact path is not fixed.
+        'prefixes' => ['/blog/', '/media/', '/content/', '/privacy/'],
+    ]);
+
+    return [
+        'exact' => array_map('strval', (array) ($routes['exact'] ?? [])),
+        'prefixes' => array_map('strval', (array) ($routes['prefixes'] ?? [])),
+    ];
+}
+
+/**
+ * Whether a site-relative href resolves to a page the public site serves.
+ *
+ * Orders of business: encoded paths are decoded before they are matched, so
+ * "/blog/%2e%2e/register" cannot borrow the /blog/ prefix, and any path that
+ * resolves to a parent-directory traversal is rejected outright.
+ */
+function elomai_route_is_public($href) {
+    $routes = elomai_public_routes();
+    $path = (string) wp_parse_url($href, PHP_URL_PATH);
+    $fragment = (string) wp_parse_url($href, PHP_URL_FRAGMENT);
+
+    $decoded = rawurldecode($path);
+    if ($decoded !== $path) {
+        $path = $decoded;
+    }
+    if (strpos($path, '\\') !== false || preg_match('#(^|/)\.\.?(/|$)#', $path)) {
+        return false;
+    }
+    if (preg_match('/[\x00-\x1f]/', $path . $fragment)) {
+        return false;
+    }
+    // Duplicate slashes are collapsed so "//blog//x" cannot dodge the allowlist
+    // or create a second URL for the same page.
+    $path = (string) preg_replace('#/{2,}#', '/', $path);
+
+    $normalised = $fragment !== '' ? $path . '#' . $fragment : $path;
+    if ($normalised === '') {
+        $normalised = '/';
+    }
+
+    if (in_array($normalised, $routes['exact'], true)) {
+        return true;
+    }
+    foreach ($routes['prefixes'] as $prefix) {
+        if ($prefix !== '' && strpos($normalised, $prefix) === 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Internal WordPress links become public portfolio links, or lose their link.
+ *
+ * Classification happens by scheme before anything is matched against the
+ * allowlist, because the previous version only looked at the host: a
+ * `mailto:` or `#anchor` href has no host and no leading slash, so both were
+ * silently unlinked, and a single-quoted href was not examined at all — which
+ * made the allowlist bypassable by quoting style alone.
+ */
 function elomai_rewrite_links($html, &$warnings) {
-    $site_host = wp_parse_url(home_url(), PHP_URL_HOST);
+    $site_host = strtolower((string) wp_parse_url(home_url(), PHP_URL_HOST));
 
-    return preg_replace_callback('/<a\b([^>]*?)href="([^"]+)"([^>]*)>(.*?)<\/a>/is', function ($match) use ($site_host, &$warnings) {
-        $href = html_entity_decode($match[2], ENT_QUOTES);
-        $host = wp_parse_url($href, PHP_URL_HOST);
+    return preg_replace_callback(
+        '/<a\b([^>]*?)(?<![\w-])href\s*=\s*(?:"([^"]*)"|\'([^\']*)\')([^>]*)>(.*?)<\/a>/is',
+        function ($match) use ($site_host, &$warnings) {
+            $raw = $match[2] !== '' ? $match[2] : ($match[3] ?? '');
+            $label = $match[5];
+            $href = trim(html_entity_decode($raw, ENT_QUOTES));
 
-        if ($host && $host !== $site_host) {
-            return $match[0];
-        }
+            $unlink = static function ($reason) use ($label, $href, &$warnings) {
+                $warnings[] = $reason . ': ' . $href;
+                return $label;
+            };
 
-        $target_id = 0;
-        if (!$host && strpos($href, '/') === 0) {
-            return $match[0]; // already a site-relative link to the portfolio
-        }
-        if ($host === $site_host) {
-            $target_id = url_to_postid($href);
-        }
-
-        if ($target_id) {
-            $public = elomai_public_url($target_id);
-            if ($public) {
-                return sprintf('<a href="%s">%s</a>', esc_url($public), $match[4]);
+            if ($href === '') {
+                return $unlink('Leerer Link in Text umgewandelt');
             }
-            $warnings[] = 'Interner Link auf nicht veröffentlichten Beitrag entfernt: ' . get_the_title($target_id);
-            return $match[4];
-        }
+            if ($href[0] === '#') {
+                return $match[0]; // same-page anchor, nothing to resolve
+            }
 
-        $warnings[] = 'Interner Link ohne öffentliches Ziel in Text umgewandelt: ' . $href;
-        return $match[4];
-    }, $html);
+            // "//host/path" parses with a host but no scheme.
+            $protocol_relative = strpos($href, '//') === 0;
+            $scheme = strtolower((string) wp_parse_url($href, PHP_URL_SCHEME));
+            $host = strtolower((string) wp_parse_url($href, PHP_URL_HOST));
+
+            if ($protocol_relative && $host !== '' && $host !== $site_host) {
+                return $match[0]; // external, inherits https from the page
+            }
+            if ($protocol_relative) {
+                // Same site, written scheme-relative: reduce it to its path.
+                $href = (string) wp_parse_url($href, PHP_URL_PATH);
+                if ($href === '') {
+                    $href = '/';
+                }
+                $scheme = '';
+                $host = '';
+            }
+
+            if ($scheme !== '' && !in_array($scheme, ['http', 'https'], true)) {
+                if (in_array($scheme, ['mailto', 'tel'], true)) {
+                    return $match[0];
+                }
+                return $unlink('Link mit nicht unterstütztem Protokoll in Text umgewandelt');
+            }
+
+            if ($host !== '' && $host !== $site_host) {
+                return $match[0]; // external http(s)
+            }
+
+            if ($host === '' && strpos($href, '/') !== 0) {
+                // "foo/bar", "?p=1" or garbage: not a route this site serves.
+                return $unlink('Link ohne verifiziertes Ziel in Text umgewandelt');
+            }
+
+            // Site-relative means "the portfolio", and the portfolio only serves
+            // a known set of routes. Anything else would be a 404 for the reader.
+            if ($host === '' && elomai_route_is_public($href)) {
+                return $match[0];
+            }
+
+            // An absolute link to our own host is still a route of this site.
+            if ($host === $site_host) {
+                $path = (string) wp_parse_url($href, PHP_URL_PATH);
+                $fragment = (string) wp_parse_url($href, PHP_URL_FRAGMENT);
+                if ($fragment !== '') {
+                    $path .= '#' . $fragment;
+                }
+                if ($path === '') {
+                    $path = '/';
+                }
+                if (elomai_route_is_public($path)) {
+                    return $match[0];
+                }
+                $target_id = url_to_postid($href);
+            } else {
+                $target_id = 0;
+            }
+
+            if ($target_id) {
+                $public = elomai_public_url($target_id);
+                if ($public) {
+                    return sprintf(
+                        '<a%s href="%s"%s>%s</a>',
+                        $match[1],
+                        esc_url($public),
+                        $match[4],
+                        $label
+                    );
+                }
+                $warnings[] = 'Interner Link auf nicht veröffentlichten Beitrag in Text umgewandelt: ' . get_the_title($target_id);
+                return $label;
+            }
+
+            $warnings[] = 'Interner Link ohne verifiziertes Ziel in Text umgewandelt: ' . $href;
+            return $label;
+        },
+        $html
+    );
 }
 
 /** Removes anything that must never reach a public page. */
@@ -235,11 +469,13 @@ function elomai_seo_payload($post, $excerpt, $featured_ref = null) {
     }
 
     $og_image_ref = null;
+    $og_card = null;
     if ($og_image) {
         $media = [];
         $variant = elomai_export_attachment($og_image, $media);
         if ($variant) {
             $og_image_ref = $variant;
+            $og_card = elomai_export_og_image($og_image, $media);
         }
     }
 
@@ -255,20 +491,25 @@ function elomai_seo_payload($post, $excerpt, $featured_ref = null) {
         ],
         'media' => $media ?? [],
         'featuredFallback' => $featured_ref,
+        'ogCard' => $og_card,
     ];
 }
 
 /**
  * Validates a post for publication and returns the payload array.
  *
+ * @param int  $post_id Post ID.
+ * @param bool $preview Build a payload for an unpublished draft, for local
+ *                      preview only. Never used by the sync path, which always
+ *                      calls this function without the flag.
  * @return array{article: array, media: array, warnings: string[]}|\WP_Error
  */
-function elomai_build_payload($post_id) {
+function elomai_build_payload($post_id, $preview = false) {
     $post = get_post($post_id);
     if (!$post || $post->post_type !== 'post') {
         return new WP_Error('elomai_invalid_post', 'Kein Beitrag.');
     }
-    if ($post->post_status !== 'publish') {
+    if ($post->post_status !== 'publish' && !$preview) {
         return new WP_Error('elomai_not_published', 'Nur veröffentlichte Beiträge werden synchronisiert.');
     }
 
@@ -314,6 +555,15 @@ function elomai_build_payload($post_id) {
         }
     }
 
+    // Social card for the cover image. Independent of the responsive variants
+    // above: the browser keeps 1600/800, the crawler gets one 1200×630 crop.
+    if ($featured && $thumbnail_id) {
+        $og_card = elomai_export_og_image($thumbnail_id, $media);
+        if ($og_card) {
+            $featured['og'] = $og_card;
+        }
+    }
+
     $seo_payload = elomai_seo_payload($post, $post->post_excerpt ?: $html, $featured['ref'] ?? null);
     foreach ($seo_payload['media'] as $ref => $item) {
         $media[$ref] = $item;
@@ -332,6 +582,9 @@ function elomai_build_payload($post_id) {
             'caption' => $featured['caption'] ?? '',
             'variants' => $featured_variants,
         ];
+        if (!empty($seo_payload['ogCard'])) {
+            $featured['og'] = $seo_payload['ogCard'];
+        }
     }
     unset($seo['ogImageRef']);
 
@@ -372,7 +625,10 @@ function elomai_build_payload($post_id) {
             continue;
         }
         $sibling = get_post($sibling_id);
-        if (!$sibling || $sibling->post_status !== 'publish') {
+        // In a preview the sibling drafts are the whole point: the language
+        // switcher and the hreflang graph can only be reviewed when the group
+        // is rendered together. The sync path still requires "publish".
+        if (!$sibling || ($sibling->post_status !== 'publish' && !$preview)) {
             continue;
         }
         $translations[] = [

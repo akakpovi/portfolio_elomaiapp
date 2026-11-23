@@ -70,6 +70,24 @@ function authorName(article) {
   return (article.author && article.author.name) || 'Elom Akakpovi';
 }
 
+/**
+ * Open Graph image for one article: the social card when WordPress exported
+ * one, otherwise the cover itself with its real dimensions. Never the cover
+ * dressed up as a 1200×630 card.
+ */
+function ogImageFor(article) {
+  const featured = article.featured;
+  const card = featured && featured.og;
+  if (card && card.src) {
+    return { url: card.src, width: card.width, height: card.height, type: card.type, alt: (featured.alt || '') };
+  }
+  if (article.seo && article.seo.ogImage) return article.seo.ogImage;
+  if (featured && featured.src) {
+    return { url: featured.src, width: featured.width, height: featured.height, alt: featured.alt || '' };
+  }
+  return undefined;
+}
+
 /* --------------------------------------------------------------- article */
 
 export function articlePage({ article, related, siteId }) {
@@ -219,7 +237,7 @@ ${footerHtml(lang)}`;
     description,
     canonical,
     alternates,
-    ogImage: article.seo && article.seo.ogImage ? article.seo.ogImage : article.featured && article.featured.src,
+    ogImage: ogImageFor(article),
     ogType: 'article',
     jsonLd,
     bodyClass: 'page-article',

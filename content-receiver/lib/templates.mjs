@@ -22,6 +22,74 @@ export function e(value) {
 
 const label = (en, de, fr) => ({ en, de, fr });
 
+/* ------------------------------------------------------------ social card */
+
+/**
+ * The portfolio ships a static 1200×630 PNG as the site-wide fallback card.
+ * Its dimensions are a property of that file, so they are allowed to live here.
+ */
+const OG_FALLBACK = { path: '/og-image.png', width: 1200, height: 630, type: 'image/png' };
+
+const IMAGE_TYPES = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  avif: 'image/avif',
+  gif: 'image/gif',
+};
+
+function absoluteUrl(value) {
+  const url = String(value || '');
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith('//')) return `https:${url}`;
+  return `${PUBLIC_BASE}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
+function ogMimeType(url, explicit) {
+  const candidates = [String(explicit || '').toLowerCase(), IMAGE_TYPES[String(url).split('?')[0].split('.').pop().toLowerCase()] || ''];
+  return candidates.find((type) => Object.values(IMAGE_TYPES).includes(type)) || '';
+}
+
+/**
+ * Normalises the Open Graph image to {url, width, height, type, alt}.
+ *
+ * Dimensions are data, not constants: a caller that does not know them gets no
+ * og:image:width/og:image:height tag at all, instead of a wrong one. The
+ * template used to advertise 1200×630 for every article while the actual file
+ * was the 1600×900 cover.
+ */
+export function resolveOgImage(ogImage, fallbackAlt = '') {
+  const fallback = {
+    url: absoluteUrl(OG_FALLBACK.path),
+    width: OG_FALLBACK.width,
+    height: OG_FALLBACK.height,
+    type: OG_FALLBACK.type,
+    alt: String(fallbackAlt || ''),
+  };
+
+  if (ogImage && typeof ogImage === 'object') {
+    const url = absoluteUrl(ogImage.url || ogImage.src);
+    if (!url) return fallback;
+    return {
+      url,
+      width: Math.max(0, Math.trunc(Number(ogImage.width) || 0)),
+      height: Math.max(0, Math.trunc(Number(ogImage.height) || 0)),
+      type: ogMimeType(url, ogImage.type),
+      alt: String(ogImage.alt || fallbackAlt || ''),
+    };
+  }
+
+  if (typeof ogImage === 'string' && ogImage) {
+    const url = absoluteUrl(ogImage);
+    if (url === fallback.url || url.endsWith(OG_FALLBACK.path)) return fallback;
+    return { url, width: 0, height: 0, type: ogMimeType(url), alt: String(fallbackAlt || '') };
+  }
+
+  return fallback;
+}
+
 export const strings = {
   navHome: label('Home', 'Start', 'Accueil'),
   navSolutions: label('AI Solutions', 'AI-Lösungen', 'Solutions IA'),
@@ -258,7 +326,11 @@ export function pageShell({
     .map((block) => `<script type="application/ld+json">${JSON.stringify(block).replace(/</g, '\\u003c')}</script>`)
     .join('\n    ');
 
-  const image = ogImage ? (ogImage.startsWith('http') ? ogImage : `${PUBLIC_BASE}${ogImage}`) : `${PUBLIC_BASE}/og-image.png`;
+  const og = resolveOgImage(ogImage, title);
+  const dimensions = og.width > 0 && og.height > 0
+    ? `\n    <meta property="og:image:width" content="${og.width}" />\n    <meta property="og:image:height" content="${og.height}" />`
+    : '';
+  const imageType = og.type ? `\n    <meta property="og:image:type" content="${e(og.type)}" />` : '';
 
   return `<!doctype html>
 <html lang="${HTML_LANG[lang] || 'en'}">
@@ -277,14 +349,13 @@ export function pageShell({
     <meta property="og:url" content="${e(canonical)}" />
     <meta property="og:title" content="${e(title)}" />
     <meta property="og:description" content="${e(description)}" />
-    <meta property="og:image" content="${e(image)}" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="${e(title)}" />
+    <meta property="og:image" content="${e(og.url)}" />${dimensions}${imageType}
+    <meta property="og:image:alt" content="${e(og.alt || title)}" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="${e(title)}" />
     <meta name="twitter:description" content="${e(description)}" />
-    <meta name="twitter:image" content="${e(image)}" />
+    <meta name="twitter:image" content="${e(og.url)}" />
+    <meta name="twitter:image:alt" content="${e(og.alt || title)}" />
     <meta name="theme-color" content="#020817" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
