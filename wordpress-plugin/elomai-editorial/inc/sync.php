@@ -337,7 +337,9 @@ add_action('transition_post_status', function ($new_status, $old_status, $post) 
         elomai_outbox_enqueue_translation_group($post->ID);
         return;
     }
-    if (in_array($new_status, ['draft', 'pending', 'trash', 'private'], true)) {
+    // Only a post that was actually public needs to be taken offline. A fresh
+    // draft must never create an unpublish job.
+    if ($old_status === 'publish' && in_array($new_status, ['draft', 'pending', 'trash', 'private'], true)) {
         elomai_log('unpublish', 'Beitrag ist nicht mehr öffentlich', $post->ID);
         elomai_outbox_enqueue($post->ID, 'unpublish');
         elomai_outbox_enqueue_translation_group($post->ID);

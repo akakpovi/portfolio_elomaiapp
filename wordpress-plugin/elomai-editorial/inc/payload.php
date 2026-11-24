@@ -523,6 +523,13 @@ function elomai_build_payload($post_id, $preview = false) {
         return new WP_Error('elomai_short_title', 'Der Titel ist zu kurz (mindestens 8 Zeichen).');
     }
 
+    // Image export needs wp_tempnam(), which WordPress only loads in the admin
+    // context. The outbox worker runs from cron, WP-CLI and the front end, so
+    // an article with a featured image would otherwise crash there.
+    if (!function_exists('wp_tempnam')) {
+        require_once ABSPATH . 'wp-admin/includes/file.php';
+    }
+
     $media = [];
     $warnings = [];
 

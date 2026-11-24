@@ -133,9 +133,11 @@ test.describe('article language switching', () => {
 
   test('a missing translation is stated, never faked', async ({ page }) => {
     const articles = await feed(page);
-    const source = articles.find(
-      (a) => Object.values(a.translationStates || {}).includes('missing') || a.translations.length < 2,
-    );
+    // Prefer an article with no siblings at all: every other language is then
+    // genuinely missing (not merely in preparation).
+    const source =
+      articles.find((a) => Object.keys(a.translationStates || {}).length === 0) ||
+      articles.find((a) => Object.values(a.translationStates || {}).includes('missing'));
     test.skip(!source, 'no article with a missing translation');
 
     await page.goto(`${BLOG_BASE}${source!.url}`);

@@ -102,26 +102,28 @@ function elomai_outbox_enqueue($post_id, $event = 'update') {
     $table = elomai_outbox_table();
     $now = elomai_outbox_now();
 
+    // The operator is chosen from two literals, never interpolated from input;
+    // binding it through prepare() would quote it and break the SQL.
+    $direction = $offline ? "= 'unpublish'" : "<> 'unpublish'";
+
     // The opposite direction supersedes anything still waiting: publishing
     // cancels a pending unpublish and vice versa.
     $wpdb->query(
         $wpdb->prepare(
             "UPDATE {$table} SET status='cancelled', updated_at=%s, last_error=%s
              WHERE post_id=%d AND status IN ('pending','retry_scheduled','failed')
-               AND event %s 'unpublish'",
+               AND event {$direction}",
             $now,
             'Durch ein neueres Ereignis ersetzt.',
-            $post_id,
-            $offline ? '!=' : '='
+            $post_id
         )
     );
 
     $existing = $wpdb->get_row(
         $wpdb->prepare(
             "SELECT * FROM {$table} WHERE post_id=%d AND status IN ('pending','processing','retry_scheduled','failed')
-               AND event %s 'unpublish' ORDER BY id DESC LIMIT 1",
-            $post_id,
-            $offline ? '=' : '!='
+               AND event {$direction} ORDER BY id DESC LIMIT 1",
+            $post_id
         )
     );
 
@@ -251,6 +253,9 @@ function elomai_outbox_schedule_next() {
 
 /** True when at least one job is ready to run now. */
 function elomai_outbox_has_due() {
+    // A plugin copied onto a running site has not been re-activated, so the
+    // table (and its schema version) may still be missing on the first request.
+    elomai_outbox_install();
     global $wpdb;
     $now = elomai_outbox_now();
     return (bool) $wpdb->get_var(
@@ -394,7 +399,11 @@ function elomai_outbox_run($job) {
         }
         $result = elomai_unpublish_post($post_id);
         if (($result['status'] ?? '') === 'unpublished' || ($result['status'] ?? '') === 'skipped') {
-            elomai_outbox_finish($job, 'synchronized', ['attempts' => 0, 'last_error' => '']);
+            elomai_outbox_finish($job, 'synchronized', [
+                'attempts' => 0,
+                'last_error' => '',
+                'version' => (int) get_post_meta($post_id, '_elomai_version', true),
+            ]);
             return;
         }
         $retryable = !isset($result['http']) || $result['http'] === 0 || $result['http'] === 429 || $result['http'] >= 500;
@@ -485,7 +494,16 @@ function elomai_outbox_work($limit = 5) {
             if (!$job) {
                 break;
             }
-            elomai_outbox_run($job);
+            try {
+                elomai_outbox_run($job);
+            } catch (Throwable $error) {
+                // A fatal must not leave the row stuck in "processing": the
+                // job is released with its error and retried like any other.
+                elomai_outbox_retry(
+                    $job,
+                    'Unerwarteter Fehler: ' . $error->getMessage()
+                );
+            }
             $processed++;
         }
     } finally {
@@ -550,6 +568,30 @@ function elomai_outbox_retry_now($post_id) {
 
 /* ----------------------------------------------------------------- hooks */
 
+/**
+ * Drains due work at the end of a normal request.
+ *
+ * WordPress cron needs a loopback HTTP request to itself, which fails in some
+ * local setups (and on any machine that is offline). Without this, a queued
+ * job would only move when the editor happened to click something. Running at
+ * shutdown keeps the queue moving on any page view — including the very
+ * request that saved the post — while the editor's response is already built.
+ * At most one job runs per request, so a slow receiver can delay one page by
+ * one request at most and can never build a backlog.
+ */
+add_action('shutdown', function () {
+    if ((defined('DOING_CRON') && DOING_CRON) || wp_installing()) {
+        return;
+    }
+    if (get_transient('elomai_outbox_worker')) {
+        return;
+    }
+    if (!elomai_outbox_has_due()) {
+        return;
+    }
+    elomai_outbox_work(1);
+}, 1);
+
 add_action('elomai_outbox_work', function () {
     elomai_outbox_work(10);
 });
@@ -559,6 +601,7 @@ add_action('init', function () {
     if (wp_installing() || (defined('DOING_CRON') && DOING_CRON)) {
         return;
     }
+    elomai_outbox_install();
     if (get_transient('elomai_outbox_nudge')) {
         return;
     }
@@ -569,6 +612,7 @@ add_action('init', function () {
 }, 20);
 
 add_action('admin_init', function () {
+    elomai_outbox_install();
     if (get_transient('elomai_outbox_admin_nudge')) {
         return;
     }
