@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node server.mjs",
     "selftest": "node test/selftest.mjs",
+    "test:multilingual": "node test/multilingual-test.mjs",
     "test:og": "node test/og-meta-test.mjs",
     "test:og:title": "node test/og-title-test.mjs",
     "test:seo": "node test/seo-social-test.mjs",

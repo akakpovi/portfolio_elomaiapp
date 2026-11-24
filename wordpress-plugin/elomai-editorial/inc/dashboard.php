@@ -70,6 +70,7 @@ function elomai_stats() {
 
 function elomai_render_dashboard() {
     $stats = elomai_stats();
+    $queue = elomai_outbox_stats();
     $filter = isset($_GET['lang']) ? sanitize_key(wp_unslash($_GET['lang'])) : '';
     $view = isset($_GET['view']) ? sanitize_key(wp_unslash($_GET['view'])) : 'all';
 
@@ -110,6 +111,8 @@ function elomai_render_dashboard() {
                 ['Geplant', $stats['counts']['future'], 'info'],
                 ['Synchronisiert', $stats['sync']['synced'], 'ok'],
                 ['Ausstehend / Fehler', $stats['sync']['pending'] + $stats['sync']['failed'], ($stats['sync']['failed'] ? 'error' : 'warn')],
+                ['Warteschlange', $queue['pending'] + $queue['retry_scheduled'] + $queue['processing'], 'info'],
+                ['Fehlgeschlagen', $queue['failed'], ($queue['failed'] ? 'error' : '')],
             ];
             foreach ($cards as $card) {
                 printf(
@@ -153,6 +156,57 @@ function elomai_render_dashboard() {
             </section>
         </div>
 
+        <section class="elomai-panel">
+            <h2>Synchronisations-Warteschlange</h2>
+            <?php
+            $recent = elomai_outbox_recent(8);
+            ?>
+            <p class="elomai-muted">
+                Dauerhafte Warteschlange: Ein Auftrag überlebt Neustarts, Offline-Zeiten und Empfänger-Ausfälle.
+                Fehlgeschlagene Aufträge werden mit wachsenden Abständen automatisch erneut versucht.
+            </p>
+            <p>
+                <a class="button button-primary" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=elomai_outbox_run'), 'elomai_outbox_run')); ?>">
+                    Warteschlange jetzt verarbeiten
+                </a>
+            </p>
+            <table class="wp-list-table widefat fixed striped">
+                <thead>
+                    <tr>
+                        <th style="width:70px">Job</th>
+                        <th>Artikel</th>
+                        <th style="width:100px">Sprache</th>
+                        <th style="width:130px">Ereignis</th>
+                        <th style="width:140px">Status</th>
+                        <th style="width:80px">Versuche</th>
+                        <th style="width:160px">Nächster Versuch (UTC)</th>
+                        <th>Letzter Fehler</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php if (!$recent) : ?>
+                    <tr><td colspan="8">Noch keine Aufträge.</td></tr>
+                <?php endif; ?>
+                <?php foreach ($recent as $job) : ?>
+                    <tr>
+                        <td>#<?php echo esc_html((string) $job->id); ?></td>
+                        <td><?php echo esc_html(get_the_title((int) $job->post_id) ?: ('#' . (int) $job->post_id)); ?></td>
+                        <td><?php echo esc_html(strtoupper((string) $job->lang)); ?></td>
+                        <td><code><?php echo esc_html((string) $job->event); ?></code></td>
+                        <td>
+                            <span class="elomai-pill elomai-pill--<?php echo esc_attr(in_array($job->status, ['failed', 'cancelled'], true) ? 'error' : ($job->status === 'synchronized' ? 'ok' : 'warn')); ?>">
+                                <?php echo esc_html((string) $job->status); ?>
+                            </span>
+                        </td>
+                        <td><?php echo esc_html((string) (int) $job->attempts); ?></td>
+                        <td><code><?php echo esc_html((string) $job->next_attempt_at); ?></code></td>
+                        <td><?php echo esc_html((string) $job->last_error); ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </section>
+
         <h2 class="elomai-section-title">Artikel</h2>
         <ul class="subsubsub">
             <?php
@@ -175,6 +229,7 @@ function elomai_render_dashboard() {
                 <tr>
                     <th>Titel</th>
                     <th>Sprache</th>
+                    <th>Gruppe</th>
                     <th>Status</th>
                     <th>Synchronisation</th>
                     <th>Version</th>
@@ -183,7 +238,7 @@ function elomai_render_dashboard() {
             </thead>
             <tbody>
             <?php if (!$rows) : ?>
-                <tr><td colspan="6">Keine Artikel in dieser Auswahl.</td></tr>
+                <tr><td colspan="7">Keine Artikel in dieser Auswahl.</td></tr>
             <?php endif; ?>
             <?php foreach ($rows as $post) :
                 $status = elomai_status($post->ID);
@@ -198,24 +253,46 @@ function elomai_render_dashboard() {
                         <?php endif; ?>
                     </td>
                     <td><span class="elomai-tag"><?php echo esc_html(strtoupper(elomai_post_language($post->ID))); ?></span></td>
+                    <td>
+                        <?php $group_id = elomai_translation_group_id($post->ID); ?>
+                        <code title="<?php echo esc_attr($group_id); ?>"><?php echo esc_html($group_id ? substr($group_id, 0, 8) : '—'); ?></code>
+                    </td>
                     <?php $status_object = get_post_status_object($post->post_status); ?>
                     <td><?php echo esc_html($status_object ? $status_object->label : $post->post_status); ?></td>
                     <td>
                         <span class="elomai-pill elomai-pill--<?php echo esc_attr($status['tone']); ?>"><?php echo esc_html($status['label']); ?></span>
                         <?php if (!empty($state['last_success'])) : ?>
-                            <div class="elomai-muted"><?php echo esc_html($state['last_success']); ?></div>
+                            <div class="elomai-muted"><?php echo esc_html($state['last_success']); ?> UTC</div>
+                        <?php endif; ?>
+                        <?php $job = elomai_outbox_latest($post->ID); ?>
+                        <?php if ($job) : ?>
+                            <div class="elomai-muted">
+                                Warteschlange: <?php echo esc_html((string) $job->status); ?><?php echo (int) $job->attempts > 0 ? ' · Versuch ' . esc_html((string) (int) $job->attempts) : ''; ?>
+                            </div>
+                            <?php if (in_array($job->status, ['pending', 'retry_scheduled', 'failed'], true)) : ?>
+                                <div class="elomai-muted">Nächster Versuch: <code><?php echo esc_html((string) $job->next_attempt_at); ?></code> UTC</div>
+                            <?php endif; ?>
                         <?php endif; ?>
                         <?php $missing = elomai_missing_translations($post->ID); ?>
                         <?php if ($missing && $post->post_status === 'publish') : ?>
-                            <div class="elomai-muted">Fehlt: <?php echo esc_html(implode(', ', array_map('strtoupper', $missing))); ?></div>
+                            <div class="elomai-muted">Nicht vorhanden: <?php echo esc_html(implode(', ', array_map('strtoupper', $missing))); ?></div>
+                        <?php endif; ?>
+                        <?php $conflicts = elomai_translation_conflicts($post->ID); ?>
+                        <?php if ($conflicts) : ?>
+                            <div class="elomai-error">Gruppenkonflikt: <?php echo esc_html(implode(', ', array_map('strtoupper', $conflicts))); ?></div>
                         <?php endif; ?>
                     </td>
                     <td><?php echo esc_html('v' . (int) get_post_meta($post->ID, '_elomai_version', true)); ?></td>
                     <td class="elomai-row-actions">
                         <?php if ($post->post_status === 'publish') : ?>
                             <a class="button button-small" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=elomai_sync&post=' . $post->ID), 'elomai_sync_' . $post->ID)); ?>">
-                                <?php echo $status['key'] === 'failed' ? 'Erneut versuchen' : 'Synchronisieren'; ?>
+                                Synchronisieren
                             </a>
+                            <?php if ($status['key'] === 'failed' || $status['key'] === 'pending') : ?>
+                                <a class="button button-small" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=elomai_retry&post=' . $post->ID), 'elomai_retry_' . $post->ID)); ?>">
+                                    Erneut versuchen
+                                </a>
+                            <?php endif; ?>
                         <?php endif; ?>
                         <?php if ($public) : ?>
                             <a class="button button-small" href="<?php echo esc_url($public); ?>" target="_blank" rel="noopener">Ansehen ↗</a>

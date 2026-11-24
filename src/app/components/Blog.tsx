@@ -24,10 +24,15 @@ const LABELS = {
   all: { en: 'All articles', de: 'Alle Artikel', fr: 'Tous les articles' },
   read: { en: 'Read article', de: 'Artikel lesen', fr: 'Lire l’article' },
   minutes: { en: 'min read', de: 'Min. Lesezeit', fr: 'min de lecture' },
-  fallback: {
-    en: 'This article is not published in your language yet — showing the English version.',
-    de: 'Dieser Artikel ist noch nicht in Ihrer Sprache verfügbar – die englische Fassung wird angezeigt.',
-    fr: 'Cet article n’est pas encore disponible dans votre langue — version anglaise affichée.',
+  emptyLanguage: {
+    en: 'No English article has been published yet.',
+    de: 'Es ist noch kein deutscher Artikel veröffentlicht.',
+    fr: 'Aucun article en français n’a encore été publié.',
+  },
+  browseLanguage: {
+    en: 'Open the English blog',
+    de: 'Zum deutschen Blog',
+    fr: 'Ouvrir le blog français',
   },
 };
 
@@ -41,7 +46,6 @@ function formatDate(iso: string, lang: Lang): string {
 export function Blog() {
   const { lang } = useLang();
   const [articles, setArticles] = useState<FeedArticle[] | null>(null);
-  const [usedFallback, setUsedFallback] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,15 +53,9 @@ export function Blog() {
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))))
       .then((feed: Feed) => {
         if (cancelled || !feed || !Array.isArray(feed.articles)) return;
-        const inLanguage = feed.articles.filter((article) => article.lang === lang);
-        if (inLanguage.length > 0) {
-          setArticles(inLanguage.slice(0, 3));
-          setUsedFallback(false);
-        } else {
-          const english = feed.articles.filter((article) => article.lang === 'en');
-          setArticles(english.slice(0, 3));
-          setUsedFallback(english.length > 0);
-        }
+        // Only the selected language is ever shown. A missing translation is
+        // reported as missing; it is never replaced by another language.
+        setArticles(feed.articles.filter((article) => article.lang === lang).slice(0, 3));
       })
       .catch(() => {
         if (!cancelled) setArticles(null);
@@ -108,14 +106,6 @@ export function Blog() {
 
         {hasArticles ? (
           <>
-            {usedFallback && (
-              <p
-                className="max-w-3xl mx-auto mb-6 text-[12.5px] rounded-xl px-4 py-3"
-                style={{ background: 'rgba(245, 158, 11, 0.06)', border: '1px solid rgba(245, 158, 11, 0.2)', color: '#d6c9a8' }}
-              >
-                {LABELS.fallback[lang]}
-              </p>
-            )}
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {articles!.map((article, idx) => {
                 const color = ACCENTS[idx % ACCENTS.length];
@@ -210,13 +200,26 @@ export function Blog() {
         ) : (
           <>
             <div
-              className="max-w-3xl mx-auto mb-8 rounded-xl px-4 py-3 flex items-start gap-2.5"
+              className="max-w-3xl mx-auto mb-4 rounded-xl px-4 py-3 flex items-start gap-2.5"
               style={{ background: 'rgba(245, 158, 11, 0.05)', border: '1px solid rgba(245, 158, 11, 0.18)' }}
             >
               <FileText size={14} style={{ color: '#fcd34d', flexShrink: 0, marginTop: 2 }} />
               <p className="text-[12.5px] leading-relaxed" style={{ color: '#d6c9a8' }}>
+                {LABELS.emptyLanguage[lang]}
+              </p>
+            </div>
+            <div className="max-w-3xl mx-auto mb-8 rounded-xl px-4 py-3" style={{ background: 'rgba(30, 41, 74, 0.35)', border: '1px solid rgba(139, 92, 246, 0.2)' }}>
+              <p className="text-[12.5px] leading-relaxed" style={{ color: '#94a3b8' }}>
                 {tx(i18n.blog.disclaimer, lang)}
               </p>
+              <a
+                href={lang === 'en' ? '/blog/' : `/blog/${lang}/`}
+                className="inline-flex items-center gap-1 text-[12px] mt-2"
+                style={{ color: '#67e8f9', textDecoration: 'none' }}
+              >
+                {LABELS.browseLanguage[lang]}
+                <ArrowRight size={11} />
+              </a>
             </div>
 
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">

@@ -117,6 +117,9 @@ function elomai_render_language_box($post) {
     $source = elomai_translation_source($post->ID);
     $group = elomai_translation_group($post->ID);
     $missing = elomai_missing_translations($post->ID);
+    $languages = elomai_translation_languages($post->ID);
+    $conflicts = elomai_translation_conflicts($post->ID);
+    $group_id = elomai_translation_group_id($post->ID);
     wp_nonce_field('elomai_language_box', 'elomai_language_nonce');
     ?>
     <p class="elomai-field">
@@ -132,20 +135,46 @@ function elomai_render_language_box($post) {
         <input type="number" id="elomai_translation_of" name="elomai_translation_of" value="<?php echo esc_attr($source ?: ''); ?>" class="small-text" min="0" />
         <span class="description">Leer lassen, wenn dies das Original ist.</span>
     </p>
-    <p><strong>Sprachgruppe</strong></p>
+    <p><strong>Sprachgruppe</strong>
+        <?php if ($group_id) : ?>
+            <code class="elomai-group"><?php echo esc_html(substr($group_id, 0, 8)); ?></code>
+        <?php endif; ?>
+    </p>
     <ul class="elomai-list">
         <?php foreach ($group as $id) : ?>
             <li>
                 <span class="lang"><?php echo esc_html(strtoupper(elomai_post_language($id))); ?></span>
                 <a href="<?php echo esc_url(get_edit_post_link($id)); ?>"><?php echo esc_html(get_the_title($id)); ?></a>
+                <?php $sibling = get_post($id); ?>
+                <small><?php echo esc_html($sibling ? $sibling->post_status : '—'); ?></small>
             </li>
         <?php endforeach; ?>
     </ul>
+    <?php if ($conflicts) : ?>
+        <p class="elomai-error">
+            <strong>Gruppenkonflikt:</strong> <?php echo esc_html(implode(', ', array_map('strtoupper', $conflicts))); ?>
+            ist in dieser Sprachgruppe doppelt belegt. Der Empfänger lehnt eine solche Synchronisierung ab, bis die Verknüpfung korrigiert ist.
+        </p>
+    <?php endif; ?>
     <?php if ($missing) : ?>
-        <p class="elomai-warn">Fehlende Übersetzungen: <strong><?php echo esc_html(implode(', ', array_map('strtoupper', $missing))); ?></strong></p>
-        <p class="description">Die öffentliche Seite zeigt für fehlende Sprachen einen klaren Hinweis – niemals eine leere Seite.</p>
+        <p class="elomai-warn">Nicht vorhanden: <strong><?php echo esc_html(implode(', ', array_map('strtoupper', $missing))); ?></strong></p>
+        <p class="description">Fehlt eine Übersetzung, zeigt die öffentliche Seite das ausdrücklich an – sie fällt nie stillschweigend auf eine andere Sprache zurück.</p>
     <?php else : ?>
-        <p class="elomai-ok">Alle drei Sprachen sind verknüpft.</p>
+        <p class="elomai-ok">Alle drei Sprachen sind in dieser Gruppe vorhanden.</p>
+    <?php endif; ?>
+    <?php
+    $unpublished = [];
+    foreach ($languages as $code => $entries) {
+        foreach ($entries as $entry) {
+            if ($entry['status'] !== 'publish') {
+                $unpublished[] = strtoupper($code);
+            }
+            break;
+        }
+    }
+    if ($unpublished) :
+        ?>
+        <p class="elomai-warn">Noch nicht veröffentlicht: <strong><?php echo esc_html(implode(', ', array_unique($unpublished))); ?></strong></p>
     <?php endif; ?>
     <?php
 }

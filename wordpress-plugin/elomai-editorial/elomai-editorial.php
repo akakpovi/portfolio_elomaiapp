@@ -80,27 +80,99 @@ function elomai_translation_source($post_id) {
     return (int) get_post_meta((int) $post_id, '_presence_translation_of', true);
 }
 
-/** Language group: the original post plus every post declared as its translation. */
-function elomai_translation_group($post_id) {
-    $source = elomai_translation_source($post_id) ?: (int) $post_id;
-    $ids = [$source];
-    $siblings = get_posts([
-        'post_type' => 'post',
-        'post_status' => ['publish', 'draft', 'future', 'pending', 'private'],
-        'posts_per_page' => 20,
-        'meta_key' => '_presence_translation_of',
-        'meta_value' => $source,
-        'fields' => 'ids',
-    ]);
-    return array_values(array_unique(array_merge($ids, array_map('intval', $siblings))));
+/**
+ * Resolves the root of a translation chain.
+ *
+ * Returns 0 when the chain is cyclic or points at itself: an invalid
+ * relationship must never become a group, because that would merge unrelated
+ * articles into one language edition.
+ */
+function elomai_translation_root($post_id) {
+    $post_id = (int) $post_id;
+    $seen = [];
+    $cursor = $post_id;
+    $guard = 0;
+    while ($cursor > 0 && $guard++ < 20) {
+        if (isset($seen[$cursor])) {
+            return 0;
+        }
+        $seen[$cursor] = true;
+        $parent = elomai_translation_source($cursor);
+        if (!$parent || $parent === $cursor) {
+            break;
+        }
+        $cursor = $parent;
+    }
+    return $cursor;
 }
 
-function elomai_missing_translations($post_id) {
-    $present = [];
-    foreach (elomai_translation_group($post_id) as $id) {
-        $present[elomai_post_language($id)] = $id;
+/**
+ * Stable translation-group identity: the UUID of the root article.
+ *
+ * Deliberately not derived from a slug, a title or a language term, so renaming
+ * an article never splits its group and reusing a slug never joins two groups.
+ */
+function elomai_translation_group_id($post_id) {
+    $root = elomai_translation_root($post_id);
+    if ($root < 1) {
+        return '';
     }
+    return (string) elomai_uuid($root);
+}
+
+/** Language group: the root post plus every post that resolves to it. */
+function elomai_translation_group($post_id) {
+    $root = elomai_translation_root($post_id);
+    if ($root < 1) {
+        return [(int) $post_id];
+    }
+    $ids = [$root];
+    $declared = get_posts([
+        'post_type' => 'post',
+        'post_status' => ['publish', 'draft', 'future', 'pending', 'private'],
+        'posts_per_page' => 50,
+        'meta_query' => [[
+            'key' => '_presence_translation_of',
+            'compare' => 'EXISTS',
+        ]],
+        'fields' => 'ids',
+    ]);
+    foreach ($declared as $candidate_id) {
+        if (elomai_translation_root($candidate_id) === $root) {
+            $ids[] = (int) $candidate_id;
+        }
+    }
+    return array_values(array_unique($ids));
+}
+
+/** Language editions of one group: lang => list of [id, status]. */
+function elomai_translation_languages($post_id) {
+    $map = [];
+    foreach (elomai_translation_group($post_id) as $id) {
+        $post = get_post($id);
+        if (!$post) {
+            continue;
+        }
+        $map[elomai_post_language($id)][] = ['id' => (int) $id, 'status' => $post->post_status];
+    }
+    return $map;
+}
+
+/** Languages with no article at all in this group. */
+function elomai_missing_translations($post_id) {
+    $present = elomai_translation_languages($post_id);
     return array_values(array_diff(ELOMAI_LANGS, array_keys($present)));
+}
+
+/** Languages that appear more than once in one group. */
+function elomai_translation_conflicts($post_id) {
+    $conflicts = [];
+    foreach (elomai_translation_languages($post_id) as $lang => $entries) {
+        if (count($entries) > 1) {
+            $conflicts[] = $lang;
+        }
+    }
+    return $conflicts;
 }
 
 function elomai_sync_state($post_id) {
@@ -134,9 +206,19 @@ function elomai_status($post_id) {
     }
     $state = elomai_sync_state($post_id);
     $key = $state['status'] ?? '';
+    // The queue is the source of truth for what still has to happen; post meta
+    // only records the last acknowledged transfer.
+    $job = function_exists('elomai_outbox_latest') ? elomai_outbox_latest($post_id) : null;
+    $queued = $job ? (string) $job->status : '';
 
     if ($post->post_status === 'trash' || $key === 'unpublish_pending') {
         return ['key' => 'unpublish_pending', 'label' => 'Wird offline genommen', 'tone' => 'warn'];
+    }
+    if ($queued === 'failed') {
+        return ['key' => 'failed', 'label' => 'Synchronisierung fehlgeschlagen', 'tone' => 'error'];
+    }
+    if (in_array($queued, ['pending', 'processing', 'retry_scheduled'], true)) {
+        return ['key' => 'pending', 'label' => 'Synchronisierung ausstehend', 'tone' => 'warn'];
     }
     if ($key === 'failed') {
         return ['key' => 'failed', 'label' => 'Synchronisierung fehlgeschlagen', 'tone' => 'error'];
@@ -263,6 +345,7 @@ function elomai_install_taxonomies() {
 
 function elomai_activate() {
     elomai_install_taxonomies();
+    elomai_outbox_install();
 
     $settings = get_option('elomai_settings', []);
     if (!is_array($settings)) {
@@ -289,6 +372,10 @@ function elomai_activate() {
     if (!wp_next_scheduled('elomai_retry_queue')) {
         wp_schedule_event(time() + 300, 'hourly', 'elomai_retry_queue');
     }
+    // A worker run right after activation drains anything left from before.
+    if (!wp_next_scheduled('elomai_outbox_work')) {
+        wp_schedule_single_event(time() + 60, 'elomai_outbox_work');
+    }
     if (!wp_next_scheduled(ELOMAI_COMMENTS_CRON)) {
         wp_schedule_event(time() + 120, 'elomai_five_minutes', ELOMAI_COMMENTS_CRON);
     }
@@ -301,6 +388,7 @@ register_activation_hook(__FILE__, 'elomai_activate');
 
 register_deactivation_hook(__FILE__, function () {
     wp_clear_scheduled_hook('elomai_retry_queue');
+    wp_clear_scheduled_hook('elomai_outbox_work');
     wp_clear_scheduled_hook('elomai_analytics_refresh');
     wp_clear_scheduled_hook(ELOMAI_COMMENTS_CRON);
     wp_clear_scheduled_hook(ELOMAI_COMMENTS_FLUSH);
@@ -349,6 +437,7 @@ add_action('init', function () {
 require_once ELOMAI_DIR . 'inc/article.php';
 require_once ELOMAI_DIR . 'inc/payload.php';
 require_once ELOMAI_DIR . 'inc/sync.php';
+require_once ELOMAI_DIR . 'inc/outbox.php';
 require_once ELOMAI_DIR . 'inc/comments.php';
 require_once ELOMAI_DIR . 'inc/dashboard.php';
 require_once ELOMAI_DIR . 'inc/social.php';

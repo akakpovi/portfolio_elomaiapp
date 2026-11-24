@@ -619,24 +619,34 @@ function elomai_build_payload($post_id, $preview = false) {
         }
     }
 
+    // One entry per language, including siblings that are still drafts: the
+    // public page must be able to say "in preparation" instead of pretending
+    // the language does not exist. Only a published sibling carries a slug, and
+    // only the receiver decides whether that slug is public yet.
     $translations = [];
+    $translation_group_id = elomai_translation_group_id($post->ID);
     foreach (elomai_translation_group($post->ID) as $sibling_id) {
         if ((int) $sibling_id === (int) $post->ID) {
             continue;
         }
         $sibling = get_post($sibling_id);
-        // In a preview the sibling drafts are the whole point: the language
-        // switcher and the hreflang graph can only be reviewed when the group
-        // is rendered together. The sync path still requires "publish".
-        if (!$sibling || ($sibling->post_status !== 'publish' && !$preview)) {
+        if (!$sibling) {
             continue;
         }
-        $translations[] = [
-            'lang' => elomai_post_language($sibling_id),
-            'slug' => $sibling->post_name,
-            'title' => $sibling->post_title,
+        $sibling_lang = elomai_post_language($sibling_id);
+        if ($sibling_lang === $lang || isset($translations[$sibling_lang])) {
+            continue;
+        }
+        $translations[$sibling_lang] = [
+            'lang' => $sibling_lang,
+            'status' => $sibling->post_status,
+            'slug' => $sibling->post_status === 'publish'
+                ? sanitize_title($sibling->post_name ?: $sibling->post_title)
+                : '',
+            'title' => wp_strip_all_tags($sibling->post_title),
         ];
     }
+    $translations = array_values($translations);
 
     $tags = wp_get_post_tags($post->ID, ['fields' => 'names']);
 
@@ -645,6 +655,7 @@ function elomai_build_payload($post_id, $preview = false) {
         'wpId' => (int) $post->ID,
         'lang' => $lang,
         'slug' => $slug,
+        'translationGroupId' => $translation_group_id,
         'title' => $title,
         'subtitle' => wp_strip_all_tags((string) trim($post->post_excerpt)),
         'excerpt' => wp_trim_words(wp_strip_all_tags($post->post_excerpt ?: $html), 38, '…'),
@@ -674,6 +685,7 @@ function elomai_build_payload($post_id, $preview = false) {
         $article['seo'],
         $article['featured'],
         $article['categories'],
+        $article['translationGroupId'],
         $article['translations'],
         $article['comments'],
         $article['publishedAt'],

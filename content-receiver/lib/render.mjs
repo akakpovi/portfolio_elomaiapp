@@ -17,6 +17,8 @@ import {
   t,
 } from './templates.mjs';
 
+const GROUP_RE = /^[a-z0-9-]{8,64}$/;
+
 /* ----------------------------------------------------------- validation */
 
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -175,10 +177,39 @@ export async function normalizeArticle(input, { publicDir, siteId: _siteId }) {
     .slice(0, 4)
     .map((c) => ({ slug: asString(c.slug, 60), name: asString(c.name, 80) }));
 
-  const translations = (Array.isArray(payload.translations) ? payload.translations : [])
-    .filter((tr) => tr && LANGS.includes(asString(tr.lang, 5)) && SLUG_RE.test(asString(tr.slug, 120)))
-    .filter((tr) => asString(tr.lang, 5) !== lang)
-    .map((tr) => ({ lang: asString(tr.lang, 5), slug: asString(tr.slug, 120), title: asString(tr.title, 300) }));
+  // A translation group is the stable identity shared by all language
+  // editions of one article. It comes from the WordPress root post UUID, so a
+  // slug change never breaks the relationship. Without one, the article is its
+  // own group (legacy single-language payloads stay valid).
+  const declaredGroup = asString(payload.translationGroupId, 64).toLowerCase();
+  const translationGroupId = declaredGroup || uuid;
+  if (!GROUP_RE.test(translationGroupId)) errors.push('translationGroupId:invalid');
+
+  // Every language entry WordPress reports is kept so the page can distinguish
+  // "never translated" from "translation exists but is not public yet". Self
+  // references and duplicate languages are dropped, never trusted.
+  const seenLangs = new Set([lang]);
+  const declaredTranslations = (Array.isArray(payload.translations) ? payload.translations : [])
+    .filter((tr) => tr && LANGS.includes(asString(tr.lang, 5)))
+    .map((tr) => ({
+      lang: asString(tr.lang, 5),
+      slug: asString(tr.slug, 120).toLowerCase(),
+      title: asString(tr.title, 300),
+      status: asString(tr.status, 20).toLowerCase() || 'publish',
+    }))
+    .filter((tr) => {
+      if (tr.lang === lang || seenLangs.has(tr.lang)) return false;
+      seenLangs.add(tr.lang);
+      return true;
+    });
+
+  // Only a published sibling with a valid slug may ever become a public link.
+  const translations = declaredTranslations.filter(
+    (tr) => tr.status === 'publish' && SLUG_RE.test(tr.slug),
+  );
+  const translationStates = Object.fromEntries(
+    declaredTranslations.map((tr) => [tr.lang, tr.status === 'publish' ? 'publish' : 'unpublished']),
+  );
 
   // The article's native WordPress comment setting decides whether the public
   // page offers a comment form at all.
@@ -208,7 +239,21 @@ export async function normalizeArticle(input, { publicDir, siteId: _siteId }) {
 
   const checksum = crypto
     .createHash('sha256')
-    .update(JSON.stringify({ title, html, excerpt, seo, featured, categories, publishedAt, modifiedAt }))
+    .update(
+      JSON.stringify({
+        title,
+        html,
+        excerpt,
+        seo,
+        featured,
+        categories,
+        publishedAt,
+        modifiedAt,
+        translationGroupId,
+        translations,
+        translationStates,
+      }),
+    )
     .digest('hex');
 
   return {
@@ -233,7 +278,9 @@ export async function normalizeArticle(input, { publicDir, siteId: _siteId }) {
     categories,
     tags: (Array.isArray(payload.tags) ? payload.tags : []).map((tag) => asString(tag, 60)).filter(Boolean).slice(0, 12),
     seo,
+    translationGroupId,
     translations,
+    translationStates,
     commentsEnabled,
     relatedProjects,
     readingMinutes: Number(payload.readingMinutes) || readingMinutes(html),
@@ -267,12 +314,15 @@ function categoriesFor(articles, lang) {
 }
 
 function relatedFor(article, articles) {
-  const others = articles.filter((a) => a.status === 'publish' && a.uuid !== article.uuid);
+  // Related reading stays inside the reader's language: a German article never
+  // recommends an English one as its "related" content.
+  const others = articles.filter(
+    (a) => a.status === 'publish' && a.uuid !== article.uuid && a.lang === article.lang,
+  );
   const primary = (article.categories || [])[0];
   const scored = others.map((other) => {
     let score = 0;
     if (primary && (other.categories || []).some((c) => c.slug === primary.slug)) score += 5;
-    if (other.lang === article.lang) score += 2;
     return { other, score };
   });
   return scored
@@ -350,13 +400,47 @@ ${urls.join('\n')}
  */
 export async function renderAll({ store, comments, publicDir, siteId, staticLastmod }) {
   const stored = store.list().filter((a) => a.status === 'publish');
-  // A translation link may only be published when the target is published too,
-  // otherwise the hreflang graph and the language switcher would point at a 404.
   const publishedKeys = new Set(stored.map((a) => `${a.lang}/${a.slug}`));
-  const articles = stored.map((a) => ({
-    ...a,
-    translations: (a.translations || []).filter((tr) => publishedKeys.has(`${tr.lang}/${tr.slug}`)),
-  }));
+
+  // Translation groups are authoritative: published articles sharing a
+  // translationGroupId are siblings. Legacy articles that only carry explicit
+  // translation entries keep working, because their published targets are
+  // merged in below instead of being trusted blindly.
+  const groups = new Map();
+  for (const article of stored) {
+    const groupId = article.translationGroupId || article.uuid;
+    if (!groups.has(groupId)) groups.set(groupId, new Map());
+    groups.get(groupId).set(article.lang, article);
+  }
+
+  // A translation may only be advertised when the target is published: the
+  // hreflang graph and the switcher must never point at a 404.
+  const articles = stored.map((article) => {
+    const siblings = groups.get(article.translationGroupId || article.uuid) || new Map();
+    const byLang = new Map();
+    for (const [code, sibling] of siblings) {
+      if (code !== article.lang) {
+        byLang.set(code, { lang: code, slug: sibling.slug, title: sibling.title });
+      }
+    }
+    for (const tr of article.translations || []) {
+      if (!byLang.has(tr.lang) && publishedKeys.has(`${tr.lang}/${tr.slug}`)) {
+        byLang.set(tr.lang, { lang: tr.lang, slug: tr.slug, title: tr.title });
+      }
+    }
+
+    const declared = article.translationStates || {};
+    const translationStates = {};
+    for (const code of LANGS) {
+      if (code === article.lang) continue;
+      if (byLang.has(code)) translationStates[code] = 'available';
+      else if (declared[code] === 'unpublished') translationStates[code] = 'unpublished';
+      // Declared published but not held here: rejected, removed or rebuilding.
+      else if (declared[code]) translationStates[code] = 'unavailable';
+    }
+
+    return { ...article, translations: [...byLang.values()], translationStates };
+  });
   const blogDir = path.join(publicDir, 'blog');
 
   // Language switcher reflects what is really published.
@@ -377,12 +461,13 @@ export async function renderAll({ store, comments, publicDir, siteId, staticLast
   // A language with no published article gets no hub at all: empty language
   // pages are neither linked nor indexed. The default language lives at
   // /blog/ so its listing and category pages share that prefix.
+  // Every language hub exists, so /blog/en/, /blog/de/ and /blog/fr/ always
+  // answer. A hub with no published article is noindexed and left out of the
+  // sitemap, but it still renders the localized empty state instead of a 404.
   for (const lang of LANGS) {
-    if (!articles.some((a) => a.lang === lang)) {
-      continue;
-    }
     const categories = categoriesFor(articles, lang);
-    const listing = listingPage({ lang, articles, categories, siteId });
+    const empty = !articles.some((a) => a.lang === lang);
+    const listing = listingPage({ lang, articles, categories, siteId, noindex: empty });
     await writeFile(path.join(blogDir, lang === 'en' ? 'index.html' : `${lang}/index.html`), listing);
 
     for (const category of categories) {
@@ -392,6 +477,36 @@ export async function renderAll({ store, comments, publicDir, siteId, staticLast
         page,
       );
     }
+  }
+
+  // /blog/en/ is an explicit alias of the English hub at /blog/. It returns the
+  // localized listing rather than a 404, and points its canonical at /blog/ so
+  // the two URLs never compete in search.
+  const englishCategories = categoriesFor(articles, 'en');
+  const englishEmpty = !articles.some((a) => a.lang === 'en');
+  await writeFile(
+    path.join(blogDir, 'en', 'index.html'),
+    listingPage({
+      lang: 'en',
+      articles,
+      categories: englishCategories,
+      siteId,
+      canonicalPath: '/blog/',
+      noindex: englishEmpty,
+    }),
+  );
+  for (const category of englishCategories) {
+    await writeFile(
+      path.join(blogDir, 'en', 'category', category.slug, 'index.html'),
+      listingPage({
+        lang: 'en',
+        articles,
+        categories: englishCategories,
+        activeCategory: category.slug,
+        siteId,
+        canonicalPath: `/blog/category/${category.slug}/`,
+      }),
+    );
   }
 
   for (const article of articles) {
@@ -430,7 +545,9 @@ export async function renderAll({ store, comments, publicDir, siteId, staticLast
         imageAlt: a.featured ? a.featured.alt : '',
         url: `/blog/${a.lang}/${a.slug}/`,
         categories: a.categories || [],
+        translationGroupId: a.translationGroupId || a.uuid,
         translations: (a.translations || []).map((tr) => ({ lang: tr.lang, slug: tr.slug })),
+        translationStates: a.translationStates || {},
       })),
   };
   await writeFile(path.join(publicDir, 'content', 'blog-index.json'), JSON.stringify(feed, null, 2));

@@ -11,9 +11,12 @@ import {
   footerHtml,
   pageShell,
   PUBLIC_BASE,
+  LANGS,
   LANG_LABEL,
   getAvailableLangs,
   categoryLabel,
+  articleLangLinks,
+  translationStateLabel,
 } from './templates.mjs';
 
 /* ------------------------------------------------------------ shared parts */
@@ -251,6 +254,29 @@ export function articlePage({ article, related, siteId, comments = { enabled: tr
     { name: article.title, href: articlePath(article) },
   ]);
 
+  // The language panel is the authoritative statement of what exists. It is
+  // always rendered, so a reader in a language without a translation is told
+  // so explicitly instead of landing on a silent fallback.
+  const langLinks = articleLangLinks(article);
+  const languagePanel = `<section class="lang-panel" aria-labelledby="lang-panel-title">
+      <h2 id="lang-panel-title">${e(t('otherLanguages', lang))}</h2>
+      <ul>${langLinks
+        .map((entry) => {
+          const name = LANG_LABEL[entry.code] || entry.code;
+          const state = translationStateLabel(entry.state, lang);
+          const head =
+            entry.state === 'available'
+              ? `<a href="${entry.href}" hreflang="${entry.code}" lang="${entry.code}">${e(name)}</a>`
+              : `<span lang="${entry.code}">${e(name)}</span>`;
+          const hub =
+            entry.state === 'current' || entry.state === 'available'
+              ? ''
+              : ` <a class="lang-hub-link" href="${entry.href}">${e(t('goToLanguageBlog', lang).replace('{lang}', name))}</a>`;
+          return `<li data-state="${entry.state}" lang="${entry.code}"><span class="lang-code">${entry.code.toUpperCase()}</span>${head}<span class="lang-state">${e(state)}</span>${hub}</li>`;
+        })
+        .join('')}</ul>
+    </section>`;
+
   const translationBar = (article.translations || []).length
     ? `<div class="translation-bar"><span>${e(t('availableIn', lang))}:</span>${article.translations
         .map((tr) => `<a href="/blog/${tr.lang}/${tr.slug}/" hreflang="${tr.lang}" lang="${tr.lang}">${LANG_LABEL[tr.lang] || tr.lang}</a>`)
@@ -286,7 +312,7 @@ export function articlePage({ article, related, siteId, comments = { enabled: tr
       </section>`
     : '';
 
-  const content = `${headerHtml(lang, articlePath(article))}
+  const content = `${headerHtml(lang, articlePath(article), langLinks)}
 ${crumbs}
 <main id="main" class="wrap article-wrap">
   <article class="article">
@@ -302,6 +328,7 @@ ${crumbs}
       </div>
       ${translationBar}
     </header>
+    ${languagePanel}
     <figure class="article-cover">${coverImage(article, 'cover-wide')}${
       article.featured && article.featured.caption ? `<figcaption>${e(article.featured.caption)}</figcaption>` : ''
     }</figure>
@@ -369,13 +396,24 @@ export function card(article, lang, { large = false } = {}) {
 </article>`;
 }
 
-export function listingPage({ lang, articles, categories, activeCategory, siteId, titleOverride, path }) {
-  const langArticles = articles.filter((a) => a.status === 'publish');
+export function listingPage({
+  lang,
+  articles,
+  categories,
+  activeCategory,
+  siteId,
+  titleOverride,
+  canonicalPath,
+  noindex = false,
+}) {
+  // A listing belongs to exactly one language. Showing an English article on
+  // the German hub because its translation is missing is the bug this fixes.
+  const langArticles = articles.filter((a) => a.status === 'publish' && a.lang === lang);
   const filtered = activeCategory ? langArticles.filter((a) => (a.categories || []).some((c) => c.slug === activeCategory)) : langArticles;
   const sorted = [...filtered].sort((a, b) => String(b.publishedAt).localeCompare(String(a.publishedAt)));
   const [featured, ...rest] = sorted;
 
-  const canonical = `${PUBLIC_BASE}${activeCategory ? categoryPath(lang, activeCategory) : listingPath(lang)}`;
+  const canonical = `${PUBLIC_BASE}${canonicalPath || (activeCategory ? categoryPath(lang, activeCategory) : listingPath(lang))}`;
   const activeCategoryEntry = activeCategory ? categories.find((c) => c.slug === activeCategory) : null;
   const activeCategoryName = activeCategoryEntry
     ? categoryLabel(activeCategory, activeCategoryEntry.name, lang)
@@ -391,10 +429,19 @@ export function listingPage({ lang, articles, categories, activeCategory, siteId
     : t('blogSubtitle', lang);
 
   const languages = getAvailableLangs();
-  const alternates = languages.map((code) => ({
-    hreflang: code,
-    href: `${PUBLIC_BASE}${activeCategory ? categoryPath(code, activeCategory) : listingPath(code)}`,
-  }));
+  // A category page only exists in a language that actually has articles in
+  // it; advertising the others would create hreflang targets that 404.
+  const categoryExists = (code) =>
+    !activeCategory ||
+    articles.some(
+      (a) => a.status === 'publish' && a.lang === code && (a.categories || []).some((c) => c.slug === activeCategory),
+    );
+  const alternates = languages
+    .filter(categoryExists)
+    .map((code) => ({
+      hreflang: code,
+      href: `${PUBLIC_BASE}${activeCategory ? categoryPath(code, activeCategory) : listingPath(code)}`,
+    }));
   alternates.push({ hreflang: 'x-default', href: `${PUBLIC_BASE}/blog/` });
 
   const jsonLd = [
@@ -439,12 +486,14 @@ export function listingPage({ lang, articles, categories, activeCategory, siteId
 
   const emptyState = `<div class="empty-state">
       <h2>${e(t('noArticles', lang))}</h2>
-      <p>${e(
-        lang === 'en'
-          ? 'New technical articles are published regularly. Meanwhile, the English articles are available.'
-          : 'Regelmäßig erscheinen neue technische Artikel. Die englischen Artikel sind bereits verfügbar.',
-      )}</p>
-      ${lang !== 'en' ? `<a class="btn btn-primary" href="/blog/">${e(t('readArticle', 'en'))} · English</a>` : ''}
+      <p>${e(t('emptyLanguageHint', lang))}</p>
+      ${languages
+        .filter((code) => code !== lang)
+        .map(
+          (code) =>
+            `<a class="btn btn-ghost" href="${activeCategory && categoryExists(code) ? categoryPath(code, activeCategory) : listingPath(code)}" hreflang="${code}" lang="${code}">${e(LANG_LABEL[code] || code)}</a>`,
+        )
+        .join(' ')}
     </div>`;
 
   const body = featured
@@ -462,7 +511,15 @@ export function listingPage({ lang, articles, categories, activeCategory, siteId
       }`
     : emptyState;
 
-  const content = `${headerHtml(lang, activeCategory ? categoryPath(lang, activeCategory) : listingPath(lang))}
+  // Every hub exists now (an empty one is noindexed), so the tabs and the
+  // header switcher can offer all three languages without risking a 404.
+  const switcher = LANGS.map((code) => ({
+    code,
+    href: activeCategory && categoryExists(code) ? categoryPath(code, activeCategory) : listingPath(code),
+    state: code === lang ? 'current' : 'available',
+  }));
+
+  const content = `${headerHtml(lang, activeCategory ? categoryPath(lang, activeCategory) : listingPath(lang), switcher)}
 <main id="main" class="wrap blog-wrap">
   <header class="blog-head">
     <p class="eyebrow">BLOG</p>
@@ -474,12 +531,14 @@ export function listingPage({ lang, articles, categories, activeCategory, siteId
         <input type="search" id="blog-search" placeholder="${e(t('search', lang))}" autocomplete="off" />
       </label>
       <div class="lang-tabs" role="group" aria-label="${e(t('languageNotice', lang))}">
-        ${languages.map(
-          (code) =>
-            `<a href="${activeCategory ? categoryPath(code, activeCategory) : listingPath(code)}" hreflang="${code}" lang="${code}"${
-              code === lang ? ' aria-current="true" class="is-active"' : ''
-            }>${code.toUpperCase()}</a>`,
-        ).join('')}
+        ${switcher
+          .map(
+            (entry) =>
+              `<a href="${entry.href}" hreflang="${entry.code}" lang="${entry.code}"${
+                entry.state === 'current' ? ' aria-current="true" class="is-active"' : ''
+              }>${entry.code.toUpperCase()}</a>`,
+          )
+          .join('')}
       </div>
     </div>
     <nav class="chips" aria-label="${e(t('categories', lang))}">${chips}</nav>
@@ -502,6 +561,8 @@ ${footerHtml(lang)}`;
     alternates,
     ogImage: '/og-image.png',
     jsonLd,
+    // An empty language hub stays reachable but must never be indexed.
+    robots: noindex ? 'noindex, follow' : '',
     bodyClass: 'page-blog',
     content,
     siteId,

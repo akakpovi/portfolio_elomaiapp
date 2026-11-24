@@ -150,6 +150,18 @@ export const strings = {
     'Cet article n’est pas encore disponible dans votre langue. Vous pouvez le lire dans une autre langue ou parcourir le blog.',
   ),
   availableIn: label('Available in', 'Verfügbar in', 'Disponible en'),
+  otherLanguages: label('This article in other languages', 'Dieser Artikel in anderen Sprachen', 'Cet article dans d’autres langues'),
+  currentLanguage: label('Current language', 'Aktuelle Sprache', 'Langue actuelle'),
+  translationStateAvailable: label('Available', 'Verfügbar', 'Disponible'),
+  translationStateMissing: label('Not translated yet', 'Noch nicht übersetzt', 'Pas encore traduit'),
+  translationStateUnpublished: label('In preparation', 'In Vorbereitung', 'En préparation'),
+  translationStateUnavailable: label('Temporarily unavailable', 'Vorübergehend nicht verfügbar', 'Temporairement indisponible'),
+  goToLanguageBlog: label('Go to the {lang} blog', 'Zum Blog auf {lang}', 'Aller au blog en {lang}'),
+  emptyLanguageHint: label(
+    'New technical articles are published regularly. The other language editions remain available.',
+    'Regelmäßig erscheinen neue technische Artikel. Die anderen Sprachausgaben bleiben verfügbar.',
+    'De nouveaux articles techniques paraissent régulièrement. Les autres éditions linguistiques restent disponibles.',
+  ),
   contents: label('Contents', 'Inhalt', 'Sommaire'),
   showContents: label('Show contents', 'Inhalt anzeigen', 'Afficher le sommaire'),
   related: label('Related articles', 'Verwandte Artikel', 'Articles liés'),
@@ -373,17 +385,82 @@ export function categoryLabel(slug, fallback, lang) {
   return name || String(slug || '');
 }
 
-export function headerHtml(lang, activePath) {
+/**
+ * Human label for a translation state. The four states are deliberately
+ * distinct: only "available" ever becomes a link to another article.
+ */
+export function translationStateLabel(state, lang) {
+  const key =
+    {
+      current: 'currentLanguage',
+      available: 'translationStateAvailable',
+      missing: 'translationStateMissing',
+      unpublished: 'translationStateUnpublished',
+      unavailable: 'translationStateUnavailable',
+    }[state] || 'translationStateMissing';
+  return t(key, lang);
+}
+
+/**
+ * Language switcher entries for one article.
+ *
+ * A translation is offered as a link only when the receiver actually holds a
+ * published article in that language for the same translation group. Every
+ * other state resolves to the language hub — never to a guessed URL.
+ */
+export function articleLangLinks(article) {
+  const published = new Map();
+  for (const tr of article.translations || []) {
+    if (!published.has(tr.lang)) published.set(tr.lang, tr);
+  }
+  const declared = article.translationStates || {};
+
+  return LANGS.map((code) => {
+    if (code === article.lang) {
+      return { code, href: articlePath(article), state: 'current' };
+    }
+    const sibling = published.get(code);
+    if (sibling) {
+      return { code, href: `/blog/${code}/${sibling.slug}/`, state: 'available' };
+    }
+    // WordPress knows the sibling but it is not public yet: in preparation.
+    if (declared[code] === 'unpublished') {
+      return { code, href: listingPath(code), state: 'unpublished' };
+    }
+    // WordPress says it is published but the receiver has no rendered copy
+    // (removed, rejected or still being rebuilt): temporarily unavailable.
+    if (declared[code] === 'unavailable') {
+      return { code, href: listingPath(code), state: 'unavailable' };
+    }
+    return { code, href: listingPath(code), state: 'missing' };
+  });
+}
+
+export function headerHtml(lang, activePath, langLinks = null) {
   const nav = NAV.map((item) => {
     const active = item.href === activePath ? ' aria-current="page"' : '';
     return `<a href="${item.href}"${active}>${e(t(item.key, lang))}</a>`;
   }).join('');
 
-  const switcherLangs = availableLangs.includes(lang) ? availableLangs : [lang, ...availableLangs];
-  const langSwitch = switcherLangs.map((code) => {
-    const href = code === lang ? activePath : langSwitchTarget(code, activePath);
-    const current = code === lang ? ' aria-current="true"' : '';
-    return `<a href="${href}" hreflang="${code}" lang="${code}"${current}>${code.toUpperCase()}</a>`;
+  // Listing pages only link to hubs that exist; article pages pass their own
+  // entries so every language state is visible, including "not available".
+  const hubs = getAvailableLangs();
+  const entries = langLinks || (hubs.includes(lang) ? hubs : [lang, ...hubs]).map((code) => ({
+    code,
+    href: code === lang ? activePath : langSwitchTarget(code, activePath),
+    state: code === lang ? 'current' : 'available',
+  }));
+  const langSwitch = entries.map((entry) => {
+    const current = entry.state === 'current' ? ' aria-current="true"' : '';
+    const state = entry.state === 'available' || entry.state === 'current' ? '' : ` data-state="${entry.state}"`;
+    const note = entry.state === 'available' || entry.state === 'current'
+      ? ''
+      : ` title="${e(`${LANG_LABEL[entry.code] || entry.code} — ${translationStateLabel(entry.state, lang)}`)}"`;
+    // hreflang describes the document actually behind the link, so it is only
+    // emitted for a real translated article (or the current page itself). A
+    // hub link is not a translation and must not look like one.
+    const hreflang = entry.state === 'available' || entry.state === 'current' ? ` hreflang="${entry.code}"` : '';
+    return `<a href="${entry.href}"${hreflang} lang="${entry.code}"${current}${state}${note}>${entry.code.toUpperCase()}</a>`;
   }).join('');
 
   return `<a class="skip-link" href="#main">Skip to content</a>
@@ -476,6 +553,7 @@ export function pageShell({
   ogImage,
   ogType = 'website',
   jsonLd,
+  robots,
   bodyClass,
   content,
   siteId,
@@ -507,7 +585,7 @@ export function pageShell({
     <meta name="description" content="${e(description)}" />
     <link rel="canonical" href="${e(canonical)}" />
     ${altTags}
-    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="robots" content="${e(robots || 'index, follow, max-image-preview:large')}" />
     <meta name="author" content="Elom Akakpovi" />
     <meta property="og:type" content="${ogType}" />
     <meta property="og:site_name" content="EL0M AI ENGINEER" />

@@ -196,21 +196,26 @@ check('x-default always points at the English hub', () => {
   assert.ok(html.includes(`hreflang="x-default" href="${PUBLIC_BASE}/blog/"`));
 });
 
-check('language tabs list only published languages', () => {
+// M11: all three language hubs are rendered (an empty one is noindexed), so
+// the tabs and the header switcher may offer all three. What must stay
+// restricted to genuinely published languages is the hreflang alternate graph,
+// which is asserted separately above.
+check('language tabs offer every reachable language hub', () => {
   setAvailableLangs(['en']);
   const html = listing('en', [article()]);
   const tabs = html.slice(html.indexOf('<div class="lang-tabs"'), html.indexOf('</div>', html.indexOf('<div class="lang-tabs"')));
   assert.ok(tabs.includes('>EN</a>'));
-  assert.ok(!tabs.includes('>DE</a>'));
-  assert.ok(!tabs.includes('>FR</a>'));
+  assert.ok(tabs.includes('>DE</a>'));
+  assert.ok(tabs.includes('>FR</a>'));
 });
 
-check('the header switcher follows the same rule', () => {
+check('the header switcher offers the same hubs', () => {
   setAvailableLangs(['en']);
   const html = listing('en', [article()]);
   const switcher = html.slice(html.indexOf('<div class="lang-switch"'), html.indexOf('</div>', html.indexOf('<div class="lang-switch"')));
   assert.ok(switcher.includes('>EN</a>'));
-  assert.ok(!switcher.includes('>DE</a>'));
+  assert.ok(switcher.includes('>DE</a>'));
+  assert.ok(switcher.includes('>FR</a>'));
 });
 
 check('a second published language adds exactly one alternate', () => {

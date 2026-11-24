@@ -197,13 +197,13 @@ try {
   check('hreflang alternate to english', deHtml.includes('hreflang="en" href="https://elomaiapp.com/blog/en/receiver-self-test/"'));
   check('german page emits the same card metadata shape', /og:image:width" content="1"/.test(deHtml) && deHtml.includes('og:image:type" content="image/png"'));
   check('german listing has article', (await read('blog/de/index.html')).includes('/blog/de/receiver-selbsttest/'));
-  // A language without a published article must not get a hub page, and the
-  // sitemap must not advertise one.
-  const frExists = await fs
-    .access(path.join(dataDir, 'public', 'blog', 'fr', 'index.html'))
-    .then(() => true)
-    .catch(() => false);
-  check('no empty french language hub', !frExists);
+  // M11: every language hub is reachable, but a hub without published articles
+  // is noindexed, never advertised in the sitemap and never filled with another
+  // language's content.
+  const frHtml = await read('blog/fr/index.html').catch(() => '');
+  check('empty french language hub answers', frHtml.length > 0);
+  check('empty french hub is noindexed', frHtml.includes('content="noindex, follow"'));
+  check('empty french hub lists no foreign article', !frHtml.includes('/blog/en/receiver-self-test/'));
   check(
     'sitemap omits empty language hub',
     !(await read('sitemap.xml')).includes('/blog/fr/'),

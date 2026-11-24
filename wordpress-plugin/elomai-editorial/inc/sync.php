@@ -7,7 +7,8 @@
 
 defined('ABSPATH') || exit;
 
-const ELOMAI_RETRY_DELAYS = [60, 300, 900, 3600, 21600];
+// Retry spacing lives in the outbox (inc/outbox.php); this file only moves one
+// document over the wire and reports exactly what the receiver answered.
 
 function elomai_signing_payload($timestamp, $nonce, $body) {
     return $timestamp . '.' . $nonce . '.' . $body;
@@ -131,7 +132,7 @@ function elomai_confirm_public($url) {
 /**
  * Synchronises one post (create or update).
  *
- * @return array{status: string, message: string, url?: string}
+ * @return array{status: string, message: string, url?: string, http?: int, code?: string, version?: int}
  */
 function elomai_sync_post($post_id, $forced = false) {
     $post_id = (int) $post_id;
@@ -183,6 +184,7 @@ function elomai_sync_post($post_id, $forced = false) {
         $attempts = (int) ($state['attempts'] ?? 0) + 1;
 
         if (!$result['ok']) {
+            $code = (string) ($result['body']['error'] ?? '');
             $retryable = $result['http'] === 0 || $result['http'] === 429 || $result['http'] >= 500;
             elomai_set_sync_state($post_id, [
                 'status' => $retryable ? 'pending' : 'failed',
@@ -192,14 +194,39 @@ function elomai_sync_post($post_id, $forced = false) {
                 'last_error' => $result['error'],
                 'last_attempt' => current_time('mysql', true),
                 'http' => $result['http'],
+                'error_code' => $code,
             ]);
-            elomai_log('sync_failed', $result['error'], $post_id, ['http' => $result['http'], 'version' => $version]);
+            elomai_log(
+                'sync_failed',
+                $result['error'],
+                $post_id,
+                ['http' => $result['http'], 'version' => $version, 'code' => $code]
+            );
+            return [
+                'status' => 'failed',
+                'message' => $result['error'],
+                'http' => (int) $result['http'],
+                'code' => $code,
+                'version' => $version,
+            ];
+        }
 
-            if ($retryable && $attempts <= count(ELOMAI_RETRY_DELAYS)) {
-                $delay = ELOMAI_RETRY_DELAYS[min($attempts - 1, count(ELOMAI_RETRY_DELAYS) - 1)];
-                wp_schedule_single_event(time() + $delay, 'elomai_sync_article', [$post_id]);
-            }
-            return ['status' => 'failed', 'message' => $result['error']];
+        // "Synchronised" means the receiver acknowledged the version we sent,
+        // not merely that it answered 200.
+        $acked = (int) ($result['body']['version'] ?? 0);
+        if ($acked !== $version) {
+            $message = sprintf('Empfänger bestätigte Version %d statt %d.', $acked, $version);
+            elomai_set_sync_state($post_id, [
+                'status' => 'pending',
+                'attempts' => $attempts,
+                'version' => $version,
+                'pending_hash' => $hash,
+                'last_error' => $message,
+                'last_attempt' => current_time('mysql', true),
+                'error_code' => 'ack_mismatch',
+            ]);
+            elomai_log('sync_unconfirmed', $message, $post_id, ['version' => $version]);
+            return ['status' => 'failed', 'message' => $message, 'http' => 200, 'code' => 'ack_mismatch', 'version' => $version];
         }
 
         $public_url = ELOMAI_PUBLIC_BASE . ($result['body']['url'] ?? '');
@@ -229,7 +256,13 @@ function elomai_sync_post($post_id, $forced = false) {
             ['version' => $version, 'url' => $public_url]
         );
 
-        return ['status' => 'synced', 'message' => $confirmed ? 'Synchronisiert.' : 'Synchronisiert, öffentliche Prüfung ausstehend.', 'url' => $public_url];
+        return [
+            'status' => 'synced',
+            'message' => $confirmed ? 'Synchronisiert.' : 'Synchronisiert, öffentliche Prüfung ausstehend.',
+            'url' => $public_url,
+            'http' => 200,
+            'version' => $version,
+        ];
     } finally {
         delete_transient($lock_key);
     }
@@ -259,9 +292,15 @@ function elomai_unpublish_post($post_id) {
             'status' => 'failed',
             'last_error' => $result['error'],
             'last_attempt' => current_time('mysql', true),
+            'http' => $result['http'],
         ]);
-        elomai_log('unpublish_failed', $result['error'], $post_id);
-        return ['status' => 'failed', 'message' => $result['error']];
+        elomai_log('unpublish_failed', $result['error'], $post_id, ['http' => $result['http']]);
+        return [
+            'status' => 'failed',
+            'message' => $result['error'],
+            'http' => (int) $result['http'],
+            'code' => (string) ($result['body']['error'] ?? ''),
+        ];
     }
 
     delete_post_meta($post_id, '_elomai_public_url');
@@ -280,25 +319,32 @@ function elomai_unpublish_post($post_id) {
 /* ---------------------------------------------------------------- triggers */
 
 /**
- * Publication and updates are synchronised right after the request that saved
- * the post, so the editor immediately sees whether the public site confirmed.
+ * Every editorial event becomes a durable outbox row. Nothing is sent inside
+ * the request that saved the post, so a slow or unreachable receiver can never
+ * block, break or half-complete the editor's save.
  */
 add_action('transition_post_status', function ($new_status, $old_status, $post) {
-    if (!$post || $post->post_type !== 'post') {
+    if (!$post || $post->post_type !== 'post' || wp_is_post_revision($post->ID)) {
         return;
     }
-    if ($new_status === 'publish' && $old_status !== 'publish') {
-        elomai_log('publish', 'Veröffentlichung erkannt', $post->ID);
-        wp_schedule_single_event(time() + 2, 'elomai_sync_article', [$post->ID]);
+    if ($new_status === 'publish') {
+        elomai_log(
+            'publish',
+            $old_status === 'publish' ? 'Aktualisierung erkannt' : 'Veröffentlichung erkannt',
+            $post->ID
+        );
+        elomai_outbox_enqueue($post->ID, $old_status === 'publish' ? 'update' : 'publish');
+        elomai_outbox_enqueue_translation_group($post->ID);
         return;
     }
-    if ($old_status === 'publish' && in_array($new_status, ['draft', 'pending', 'trash', 'private'], true)) {
+    if (in_array($new_status, ['draft', 'pending', 'trash', 'private'], true)) {
         elomai_log('unpublish', 'Beitrag ist nicht mehr öffentlich', $post->ID);
-        wp_schedule_single_event(time() + 2, 'elomai_unpublish_article', [$post->ID]);
+        elomai_outbox_enqueue($post->ID, 'unpublish');
+        elomai_outbox_enqueue_translation_group($post->ID);
     }
 }, 10, 3);
 
-/** Content edits of an already published post bump the version. */
+/** Content, title, slug, excerpt and comment-setting edits of a live post. */
 add_action('post_updated', function ($post_id, $post_after, $post_before) {
     if ($post_after->post_type !== 'post') {
         return;
@@ -306,42 +352,67 @@ add_action('post_updated', function ($post_id, $post_after, $post_before) {
     if ($post_after->post_status !== 'publish' || $post_before->post_status !== 'publish') {
         return;
     }
-    if ($post_after->post_content === $post_before->post_content
-        && $post_after->post_title === $post_before->post_title
-        && $post_after->post_excerpt === $post_before->post_excerpt) {
-        return;
-    }
-    wp_schedule_single_event(time() + 2, 'elomai_sync_article', [$post_id]);
-}, 10, 3);
-
-add_action('elomai_sync_article', function ($post_id) {
-    elomai_sync_post($post_id);
-});
-
-add_action('elomai_unpublish_article', function ($post_id) {
-    elomai_unpublish_post($post_id);
-});
-
-/** Safety net: hourly retry sweep plus scheduled publications. */
-add_action('elomai_retry_queue', function () {
-    $posts = get_posts([
-        'post_type' => 'post',
-        'post_status' => 'publish',
-        'posts_per_page' => 20,
-        'meta_query' => [
-            [
-                'key' => '_elomai_sync',
-                'compare' => 'EXISTS',
-            ],
-        ],
-        'fields' => 'ids',
-    ]);
-    foreach ($posts as $post_id) {
-        $state = elomai_sync_state($post_id);
-        if (in_array($state['status'] ?? '', ['pending', 'failed'], true) && (int) ($state['attempts'] ?? 0) < 8) {
-            elomai_sync_post($post_id);
+    $fields = ['post_content', 'post_title', 'post_excerpt', 'post_name', 'post_author', 'comment_status'];
+    $changed = false;
+    foreach ($fields as $field) {
+        if ($post_after->$field !== $post_before->$field) {
+            $changed = true;
+            break;
         }
     }
+    if (!$changed) {
+        return;
+    }
+    elomai_outbox_enqueue($post_id, 'update');
+    if ($post_after->post_name !== $post_before->post_name) {
+        // A slug change moves the canonical URL of every sibling's hreflang.
+        elomai_outbox_enqueue_translation_group($post_id);
+    }
+}, 10, 3);
+
+/**
+ * Fields that live in post meta: featured image, SEO/social metadata and the
+ * translation relationship. They never touch post_content, so they need their
+ * own triggers.
+ */
+$elomai_meta_trigger = function ($post_id, $meta_key) {
+    if (!in_array($meta_key, ['_thumbnail_id', '_elomai_seo', '_presence_translation_of'], true)) {
+        return;
+    }
+    if (get_post_type($post_id) !== 'post' || get_post_status($post_id) !== 'publish') {
+        return;
+    }
+    elomai_outbox_enqueue($post_id, $meta_key === '_presence_translation_of' ? 'translation' : 'update');
+    if ($meta_key === '_presence_translation_of') {
+        elomai_outbox_enqueue_translation_group($post_id);
+    }
+};
+add_action('updated_post_meta', function ($meta_id, $post_id, $meta_key) use ($elomai_meta_trigger) {
+    $elomai_meta_trigger($post_id, $meta_key);
+}, 10, 3);
+add_action('added_post_meta', function ($meta_id, $post_id, $meta_key) use ($elomai_meta_trigger) {
+    $elomai_meta_trigger($post_id, $meta_key);
+}, 10, 3);
+add_action('deleted_post_meta', function ($meta_ids, $post_id, $meta_key) use ($elomai_meta_trigger) {
+    $elomai_meta_trigger($post_id, $meta_key);
+}, 10, 3);
+
+/** Changing the article language changes the listing it belongs to. */
+add_action('set_object_terms', function ($object_id, $terms, $tt_ids, $taxonomy) {
+    if ($taxonomy !== 'language' || get_post_type($object_id) !== 'post') {
+        return;
+    }
+    if (get_post_status($object_id) !== 'publish') {
+        return;
+    }
+    elomai_outbox_enqueue($object_id, 'update');
+    elomai_outbox_enqueue_translation_group($object_id);
+}, 10, 4);
+
+/** Safety net: hourly drain, so a long offline period always recovers. */
+add_action('elomai_retry_queue', function () {
+    elomai_outbox_work(10);
+    do_action('elomai_outbox_prune');
 });
 
 // WP-Cron fires on the next admin page load; the dashboard nudges it too.
@@ -356,15 +427,52 @@ add_action('admin_init', function () {
 
 /* ---------------------------------------------------------- admin actions */
 
+/**
+ * Manual "Synchronise now": enqueue, then drain that one job immediately so
+ * the administrator sees the receiver's answer without waiting for cron.
+ */
 add_action('admin_post_elomai_sync', function () {
     $post_id = (int) ($_GET['post'] ?? 0);
     if (!$post_id || !current_user_can('edit_post', $post_id)) {
         wp_die('Nicht erlaubt.');
     }
     check_admin_referer('elomai_sync_' . $post_id);
-    $result = elomai_sync_post($post_id, true);
-    $flag = $result['status'] === 'synced' ? 'elomai_synced' : 'elomai_error';
-    wp_safe_redirect(add_query_arg($flag, rawurlencode($result['message']), get_edit_post_link($post_id, 'url')));
+    delete_transient('elomai_outbox_worker');
+    elomai_outbox_retry_now($post_id);
+    $state = elomai_sync_state($post_id);
+    $ok = ($state['status'] ?? '') === 'synced';
+    $message = $ok ? 'Synchronisiert.' : (string) ($state['last_error'] ?? 'Synchronisierung fehlgeschlagen.');
+    wp_safe_redirect(add_query_arg($ok ? 'elomai_synced' : 'elomai_error', rawurlencode($message), get_edit_post_link($post_id, 'url')));
+    exit;
+});
+
+add_action('admin_post_elomai_retry', function () {
+    $post_id = (int) ($_GET['post'] ?? 0);
+    if (!$post_id || !current_user_can('edit_post', $post_id)) {
+        wp_die('Nicht erlaubt.');
+    }
+    check_admin_referer('elomai_retry_' . $post_id);
+    delete_transient('elomai_outbox_worker');
+    elomai_outbox_retry_now($post_id);
+    wp_safe_redirect(add_query_arg('elomai_synced', rawurlencode('Erneut versucht.'), admin_url('admin.php?page=elomai-editorial')));
+    exit;
+});
+
+/** Drains the whole queue from the dashboard, for use after an outage. */
+add_action('admin_post_elomai_outbox_run', function () {
+    if (!current_user_can('manage_options')) {
+        wp_die('Nicht erlaubt.');
+    }
+    check_admin_referer('elomai_outbox_run');
+    delete_transient('elomai_outbox_worker');
+    $processed = elomai_outbox_work(10);
+    wp_safe_redirect(
+        add_query_arg(
+            'elomai_synced',
+            rawurlencode(sprintf('%d Auftrag/Aufträge verarbeitet.', $processed)),
+            admin_url('admin.php?page=elomai-editorial')
+        )
+    );
     exit;
 });
 

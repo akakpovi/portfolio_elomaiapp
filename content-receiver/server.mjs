@@ -94,6 +94,7 @@ async function handleUpsert(req, res, rawBody) {
       uuid: previous.uuid,
       version: previous.version,
       url: `/blog/${previous.lang}/${previous.slug}/`,
+      result: 'already_synchronized',
       message: 'already_synchronized',
     });
   }
@@ -135,12 +136,60 @@ async function handleUpsert(req, res, rawBody) {
     throw err;
   }
 
+  // Version ordering: a delayed job must never roll a newer article back.
+  const existing = store.get(article.uuid);
+  if (existing && Number(existing.version) > Number(article.version)) {
+    return json(res, 409, {
+      ok: false,
+      error: 'stale_version',
+      storedVersion: existing.version,
+      receivedVersion: article.version,
+    });
+  }
+  if (
+    existing &&
+    Number(existing.version) === Number(article.version) &&
+    existing.checksum !== article.checksum
+  ) {
+    return json(res, 409, {
+      ok: false,
+      error: 'version_conflict',
+      storedVersion: existing.version,
+      receivedVersion: article.version,
+    });
+  }
+
+  // Translation integrity: one article per (group, language). A second article
+  // claiming the same slot is rejected instead of silently overwriting the
+  // other language edition.
+  const groupId = article.translationGroupId || article.uuid;
+  const clash = store
+    .list()
+    .find(
+      (other) =>
+        other.uuid !== article.uuid &&
+        other.status === 'publish' &&
+        (other.translationGroupId || other.uuid) === groupId &&
+        other.lang === article.lang,
+    );
+  if (clash) {
+    return json(res, 409, {
+      ok: false,
+      error: 'translation_conflict',
+      translationGroupId: groupId,
+      lang: article.lang,
+      conflictingUuid: clash.uuid,
+    });
+  }
+
   await store.saveArticle(article, idempotencyKey, { operation: 'upsert' });
   lastRender = await rerender();
 
   return json(res, 200, {
     ok: true,
+    result: existing ? 'updated' : 'created',
     uuid: article.uuid,
+    translationGroupId: groupId,
     version: article.version,
     status: article.status,
     lang: article.lang,
@@ -165,11 +214,20 @@ const server = http.createServer(async (req, res) => {
 
   if (route === '/health' && req.method === 'GET') {
     const articles = store.list();
+    const published = articles.filter((a) => a.status === 'publish');
+    const byLang = { en: 0, de: 0, fr: 0 };
+    const groups = new Set();
+    for (const article of published) {
+      byLang[article.lang] = (byLang[article.lang] || 0) + 1;
+      groups.add(article.translationGroupId || article.uuid);
+    }
     return json(res, ready ? 200 : 503, {
       ok: ready,
       service: 'elomai-content-receiver',
-      articles: articles.filter((a) => a.status === 'publish').length,
+      articles: published.length,
       stored: articles.length,
+      byLang,
+      translationGroups: groups.size,
       lastRender: lastRender ? lastRender.generatedAt : null,
       secretConfigured: Boolean(secret),
       uptimeSeconds: Math.round(process.uptime()),

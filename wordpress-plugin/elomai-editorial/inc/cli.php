@@ -207,3 +207,74 @@ WP_CLI::add_command('elomai comments', new class {
         WP_CLI::success(sprintf('%d Eintrag/Einträge entfernt', (int) ($result['body']['changed'] ?? 0)));
     }
 });
+
+/**
+ * Durable synchronisation queue.
+ *
+ *   wp elomai outbox status
+ *   wp elomai outbox work [--limit=10]
+ *   wp elomai outbox retry <post-id>
+ */
+WP_CLI::add_command('elomai outbox', new class {
+    /**
+     * Show queue counters and the ten most recent jobs.
+     */
+    public function status() {
+        $stats = elomai_outbox_stats();
+        $rows = [];
+        foreach ($stats as $status => $count) {
+            $rows[] = ['status' => $status, 'jobs' => $count];
+        }
+        WP_CLI\Utils\format_items('table', $rows, ['status', 'jobs']);
+
+        $recent = [];
+        foreach (elomai_outbox_recent(10) as $job) {
+            $recent[] = [
+                'id' => (int) $job->id,
+                'post' => (int) $job->post_id,
+                'lang' => (string) $job->lang,
+                'event' => (string) $job->event,
+                'status' => (string) $job->status,
+                'attempts' => (int) $job->attempts,
+                'next' => (string) $job->next_attempt_at,
+                'error' => mb_strimwidth((string) $job->last_error, 0, 50, '…'),
+            ];
+        }
+        if ($recent) {
+            WP_CLI\Utils\format_items('table', $recent, ['id', 'post', 'lang', 'event', 'status', 'attempts', 'next', 'error']);
+        } else {
+            WP_CLI::log('Warteschlange ist leer.');
+        }
+    }
+
+    /**
+     * Drain due jobs now.
+     *
+     * ## OPTIONS
+     * [--limit=<number>]
+     * : Maximum number of jobs (default 10).
+     */
+    public function work($args, $assoc_args) {
+        $limit = max(1, (int) ($assoc_args['limit'] ?? 10));
+        delete_transient('elomai_outbox_worker');
+        $processed = elomai_outbox_work($limit);
+        WP_CLI::success(sprintf('%d Auftrag/Aufträge verarbeitet', $processed));
+    }
+
+    /**
+     * Reset the backoff of one post and run its job immediately.
+     */
+    public function retry($args) {
+        $post_id = (int) ($args[0] ?? 0);
+        if (!$post_id || get_post_type($post_id) !== 'post') {
+            WP_CLI::error('Gültige Beitrags-ID erforderlich.');
+        }
+        delete_transient('elomai_outbox_worker');
+        elomai_outbox_retry_now($post_id);
+        $job = elomai_outbox_latest($post_id);
+        WP_CLI::log(sprintf('#%d %s (Versuche: %d)', $post_id, $job ? $job->status : 'unbekannt', $job ? (int) $job->attempts : 0));
+        if ($job && $job->status === 'failed') {
+            WP_CLI::error($job->last_error ?: 'Synchronisierung fehlgeschlagen.');
+        }
+    }
+});
